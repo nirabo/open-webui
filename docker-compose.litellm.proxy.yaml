@@ -1,0 +1,28 @@
+services:
+  litellm:
+    build:
+      context: ../litellm/
+      dockerfile: ../litellm/Dockerfile
+    command:
+      - --config
+      - /app/conf/config.yaml
+      - --port
+      - "8000"
+      - --num_workers
+      - "8"
+      - "--detailed_debug"
+    image: litellm-proxy
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8000
+        published: 12345
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: ./my/litellm.proxy.yaml
+        target: /app/conf/config.yaml
+        read_only: true
+        bind:
+          create_host_path: true

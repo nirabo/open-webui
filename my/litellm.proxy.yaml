@@ -1,0 +1,31 @@
+general_settings:
+  master_key: sk-mymasterkey1234
+  max_parallel_requests: 100 # max parallel requests for a user = 100
+
+router_settings:
+  routing_strategy: "least-busy"
+
+litellm_settings: # module level litellm settings - https://github.com/BerriAI/litellm/blob/main/litellm/__init__.py
+  drop_params: True
+  set_verbose: True
+  api_base: "http://ollama:11434"
+  rpm: 5000
+  tmp: 20000
+
+
+model_list: # will route requests to the least busy ollama model
+  - model_name: llama2
+    litellm_params: 
+      model: "ollama/llama2"
+
+  - model_name: codellama
+    litellm_params: 
+      model: "ollama/codellama:7b"
+
+  # - model_name: codellama:13b-instruct
+  #   litellm_params:
+  #     model: "ollama/codellama:13b-instruct"
+
+  # - model_name: codellama:7b-code
+  #   litellm_params:
+  #     model: "ollama/codellama:7b-code"
