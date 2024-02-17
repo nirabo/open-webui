@@ -35,6 +35,14 @@ FRONTEND_BUILD_DIR = str(Path(os.getenv("FRONTEND_BUILD_DIR", "../build")))
 UPLOAD_DIR = f"{DATA_DIR}/uploads"
 Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
 
+
+####################################
+# Cache DIR
+####################################
+
+CACHE_DIR = f"{DATA_DIR}/cache"
+Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
+
 ####################################
 # OLLAMA_API_BASE_URL
 ####################################
@@ -62,6 +70,7 @@ if OPENAI_API_BASE_URL == "":
 # WEBUI
 ####################################
 
+ENABLE_SIGNUP = os.environ.get("ENABLE_SIGNUP", True)
 DEFAULT_MODELS = os.environ.get("DEFAULT_MODELS", None)
 DEFAULT_PROMPT_SUGGESTIONS = os.environ.get(
     "DEFAULT_PROMPT_SUGGESTIONS",
@@ -84,12 +93,15 @@ DEFAULT_PROMPT_SUGGESTIONS = os.environ.get(
         },
     ],
 )
+DEFAULT_USER_ROLE = "pending"
+USER_PERMISSIONS = {"chat": {"deletion": True}}
+
 
 ####################################
 # WEBUI_VERSION
 ####################################
 
-WEBUI_VERSION = os.environ.get("WEBUI_VERSION", "v1.0.0-alpha.61")
+WEBUI_VERSION = os.environ.get("WEBUI_VERSION", "v1.0.0-alpha.100")
 
 ####################################
 # WEBUI_AUTH (Required for security)
@@ -98,12 +110,17 @@ WEBUI_VERSION = os.environ.get("WEBUI_VERSION", "v1.0.0-alpha.61")
 WEBUI_AUTH = True
 
 ####################################
-# WEBUI_JWT_SECRET_KEY
+# WEBUI_SECRET_KEY
 ####################################
 
-WEBUI_JWT_SECRET_KEY = os.environ.get("WEBUI_JWT_SECRET_KEY", "t0p-s3cr3t")
+WEBUI_SECRET_KEY = os.environ.get(
+    "WEBUI_SECRET_KEY",
+    os.environ.get(
+        "WEBUI_JWT_SECRET_KEY", "t0p-s3cr3t"
+    ),  # DEPRECATED: remove at next major version
+)
 
-if WEBUI_AUTH and WEBUI_JWT_SECRET_KEY == "":
+if WEBUI_AUTH and WEBUI_SECRET_KEY == "":
     raise ValueError(ERROR_MESSAGES.ENV_VAR_NOT_FOUND)
 
 ####################################
@@ -113,7 +130,15 @@ if WEBUI_AUTH and WEBUI_JWT_SECRET_KEY == "":
 CHROMA_DATA_PATH = f"{DATA_DIR}/vector_db"
 EMBED_MODEL = "all-MiniLM-L6-v2"
 CHROMA_CLIENT = chromadb.PersistentClient(
-    path=CHROMA_DATA_PATH, settings=Settings(allow_reset=True)
+    path=CHROMA_DATA_PATH,
+    settings=Settings(allow_reset=True, anonymized_telemetry=False),
 )
 CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 100
+
+####################################
+# Transcribe
+####################################
+
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", f"{CACHE_DIR}/whisper/models")

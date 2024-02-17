@@ -25,7 +25,14 @@ ENV OLLAMA_API_BASE_URL "/ollama/api"
 ENV OPENAI_API_BASE_URL ""
 ENV OPENAI_API_KEY ""
 
-ENV WEBUI_JWT_SECRET_KEY "SECRET_KEY"
+ENV WEBUI_SECRET_KEY ""
+
+ENV SCARF_NO_ANALYTICS true
+ENV DO_NOT_TRACK true
+
+#Whisper TTS Settings
+ENV WHISPER_MODEL="base"
+ENV WHISPER_MODEL_DIR="/app/backend/data/cache/whisper/models"
 
 WORKDIR /app/backend
 
@@ -35,13 +42,15 @@ COPY ./backend/requirements.txt ./requirements.txt
 RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
 RUN pip3 install -r requirements.txt --no-cache-dir
 
-# Install pandoc
+# Install pandoc and netcat
 # RUN python -c "import pypandoc; pypandoc.download_pandoc()"
 RUN apt-get update \
-    && apt-get install -y pandoc \
+    && apt-get install -y pandoc netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2')"
+RUN python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['WHISPER_MODEL_DIR'])"
+
 
 # copy embedding weight from build
 RUN mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2
@@ -53,4 +62,4 @@ COPY --from=build /app/build /app/build
 # copy backend files
 COPY ./backend .
 
-CMD [ "sh", "start.sh" ]
+CMD [ "bash", "start.sh"]

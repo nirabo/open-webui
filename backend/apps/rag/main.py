@@ -10,6 +10,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 import os, shutil
+from typing import List
 
 # from chromadb.utils import embedding_functions
 
@@ -38,7 +39,7 @@ import uuid
 import time
 
 from utils.misc import calculate_sha256, calculate_sha256_string
-from utils.utils import get_current_user
+from utils.utils import get_current_user, get_admin_user
 from config import UPLOAD_DIR, EMBED_MODEL, CHROMA_CLIENT, CHUNK_SIZE, CHUNK_OVERLAP
 from constants import ERROR_MESSAGES
 
@@ -96,19 +97,22 @@ async def get_status():
     return {"status": True}
 
 
-@app.get("/query/{collection_name}")
-def query_collection(
-    collection_name: str,
-    query: str,
-    k: Optional[int] = 4,
+class QueryDocForm(BaseModel):
+    collection_name: str
+    query: str
+    k: Optional[int] = 4
+
+
+@app.post("/query/doc")
+def query_doc(
+    form_data: QueryDocForm,
     user=Depends(get_current_user),
 ):
     try:
         collection = CHROMA_CLIENT.get_collection(
-            name=collection_name,
+            name=form_data.collection_name,
         )
-        result = collection.query(query_texts=[query], n_results=k)
-
+        result = collection.query(query_texts=[form_data.query], n_results=form_data.k)
         return result
     except Exception as e:
         print(e)
@@ -116,6 +120,79 @@ def query_collection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ERROR_MESSAGES.DEFAULT(e),
         )
+
+
+class QueryCollectionsForm(BaseModel):
+    collection_names: List[str]
+    query: str
+    k: Optional[int] = 4
+
+
+def merge_and_sort_query_results(query_results, k):
+    # Initialize lists to store combined data
+    combined_ids = []
+    combined_distances = []
+    combined_metadatas = []
+    combined_documents = []
+
+    # Combine data from each dictionary
+    for data in query_results:
+        combined_ids.extend(data["ids"][0])
+        combined_distances.extend(data["distances"][0])
+        combined_metadatas.extend(data["metadatas"][0])
+        combined_documents.extend(data["documents"][0])
+
+    # Create a list of tuples (distance, id, metadata, document)
+    combined = list(
+        zip(combined_distances, combined_ids, combined_metadatas, combined_documents)
+    )
+
+    # Sort the list based on distances
+    combined.sort(key=lambda x: x[0])
+
+    # Unzip the sorted list
+    sorted_distances, sorted_ids, sorted_metadatas, sorted_documents = zip(*combined)
+
+    # Slicing the lists to include only k elements
+    sorted_distances = list(sorted_distances)[:k]
+    sorted_ids = list(sorted_ids)[:k]
+    sorted_metadatas = list(sorted_metadatas)[:k]
+    sorted_documents = list(sorted_documents)[:k]
+
+    # Create the output dictionary
+    merged_query_results = {
+        "ids": [sorted_ids],
+        "distances": [sorted_distances],
+        "metadatas": [sorted_metadatas],
+        "documents": [sorted_documents],
+        "embeddings": None,
+        "uris": None,
+        "data": None,
+    }
+
+    return merged_query_results
+
+
+@app.post("/query/collection")
+def query_collection(
+    form_data: QueryCollectionsForm,
+    user=Depends(get_current_user),
+):
+    results = []
+
+    for collection_name in form_data.collection_names:
+        try:
+            collection = CHROMA_CLIENT.get_collection(
+                name=collection_name,
+            )
+            result = collection.query(
+                query_texts=[form_data.query], n_results=form_data.k
+            )
+            results.append(result)
+        except:
+            pass
+
+    return merge_and_sort_query_results(results, form_data.k)
 
 
 @app.post("/web")
@@ -277,38 +354,26 @@ def store_doc(
 
 
 @app.get("/reset/db")
-def reset_vector_db(user=Depends(get_current_user)):
-    if user.role == "admin":
-        CHROMA_CLIENT.reset()
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-        )
+def reset_vector_db(user=Depends(get_admin_user)):
+    CHROMA_CLIENT.reset()
 
 
 @app.get("/reset")
-def reset(user=Depends(get_current_user)) -> bool:
-    if user.role == "admin":
-        folder = f"{UPLOAD_DIR}"
-        for filename in os.listdir(folder):
-            file_path = os.path.join(folder, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print("Failed to delete %s. Reason: %s" % (file_path, e))
-
+def reset(user=Depends(get_admin_user)) -> bool:
+    folder = f"{UPLOAD_DIR}"
+    for filename in os.listdir(folder):
+        file_path = os.path.join(folder, filename)
         try:
-            CHROMA_CLIENT.reset()
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
         except Exception as e:
-            print(e)
+            print("Failed to delete %s. Reason: %s" % (file_path, e))
 
-        return True
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-        )
+    try:
+        CHROMA_CLIENT.reset()
+    except Exception as e:
+        print(e)
+
+    return True

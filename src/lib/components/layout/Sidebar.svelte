@@ -11,14 +11,16 @@
 	import {
 		deleteChatById,
 		getChatList,
+		getChatById,
 		getChatListByTagName,
 		updateChatById
 	} from '$lib/apis/chats';
+	import toast from 'svelte-french-toast';
 
 	let show = false;
 	let navElement;
 
-	let title: string = 'Ollama Web UI';
+	let title: string = 'UI';
 	let search = '';
 
 	let chatDeleteId = null;
@@ -31,15 +33,23 @@
 		if (window.innerWidth > 1280) {
 			show = true;
 		}
-
 		await chats.set(await getChatList(localStorage.token));
-
-		tags.subscribe(async (value) => {
-			if (value.length === 0) {
-				await chats.set(await getChatList(localStorage.token));
-			}
-		});
 	});
+
+	// Helper function to fetch and add chat content to each chat
+	const enrichChatsWithContent = async (chatList) => {
+		const enrichedChats = await Promise.all(
+			chatList.map(async (chat) => {
+				const chatDetails = await getChatById(localStorage.token, chat.id).catch((error) => null); // Handle error or non-existent chat gracefully
+				if (chatDetails) {
+					chat.chat = chatDetails.chat; // Assuming chatDetails.chat contains the chat content
+				}
+				return chat;
+			})
+		);
+
+		await chats.set(enrichedChats);
+	};
 
 	const loadChat = async (id) => {
 		goto(`/c/${id}`);
@@ -55,10 +65,17 @@
 	};
 
 	const deleteChat = async (id) => {
-		goto('/');
+		const res = await deleteChatById(localStorage.token, id).catch((error) => {
+			toast.error(error);
+			chatDeleteId = null;
 
-		await deleteChatById(localStorage.token, id);
-		await chats.set(await getChatList(localStorage.token));
+			return null;
+		});
+
+		if (res) {
+			goto('/');
+			await chats.set(await getChatList(localStorage.token));
+		}
 	};
 
 	const saveSettings = async (updated) => {
@@ -70,16 +87,20 @@
 
 <div
 	bind:this={navElement}
-	class="h-screen {show
-		? ''
-		: '-translate-x-[260px]'}  w-[260px] fixed top-0 left-0 z-40 transition bg-black text-gray-200 shadow-2xl text-sm
+	class="h-screen max-h-[100dvh] min-h-screen {show
+		? 'lg:relative w-[260px]'
+		: '-translate-x-[260px] w-[0px]'}  bg-black text-gray-200 shadow-2xl text-sm transition z-40 fixed top-0 left-0
         "
 >
-	<div class="py-2.5 my-auto flex flex-col justify-between h-screen">
+	<div
+		class="py-2.5 my-auto flex flex-col justify-between h-screen max-h-[100dvh] w-[260px] {show
+			? ''
+			: 'invisible'}"
+	>
 		<div class="px-2.5 flex justify-center space-x-2">
 			<button
 				id="sidebar-new-chat-button"
-				class="flex-grow flex justify-between rounded-md px-3 py-2 mt-1 hover:bg-gray-900 transition"
+				class="flex-grow flex justify-between rounded-md px-3 py-2 hover:bg-gray-900 transition"
 				on:click={async () => {
 					goto('/');
 
@@ -91,8 +112,8 @@
 				}}
 			>
 				<div class="flex self-center">
-					<div class="self-center mr-3.5">
-						<img src="/ollama.png" class=" w-5 invert-[100%] rounded-full" />
+					<div class="self-center mr-1.5">
+						<img src="/favicon.png" class=" w-7 -translate-x-1.5 rounded-full" alt="logo" />
 					</div>
 
 					<div class=" self-center font-medium text-sm">New Chat</div>
@@ -271,6 +292,9 @@
 						class="w-full rounded-r py-1.5 pl-2.5 pr-4 text-sm text-gray-300 bg-gray-950 outline-none"
 						placeholder="Search"
 						bind:value={search}
+						on:focus={() => {
+							enrichChatsWithContent($chats);
+						}}
 					/>
 
 					<!-- <div class="self-center pr-3 py-2  bg-gray-900">
@@ -323,11 +347,16 @@
 						let title = chat.title.toLowerCase();
 						const query = search.toLowerCase();
 
-						if (title.includes(query)) {
-							return true;
-						} else {
-							return false;
+						let contentMatches = false;
+						// Access the messages within chat.chat.messages
+						if (chat.chat && chat.chat.messages && Array.isArray(chat.chat.messages)) {
+							contentMatches = chat.chat.messages.some((message) => {
+								// Check if message.content exists and includes the search query
+								return message.content && message.content.toLowerCase().includes(query);
+							});
 						}
+
+						return title.includes(query) || contentMatches;
 					}
 				}) as chat, i}
 					<div class=" w-full pr-2 relative">
@@ -548,7 +577,7 @@
 					{#if showDropdown}
 						<div
 							id="dropdownDots"
-							class="absolute z-10 bottom-[70px] 4.5rem rounded-lg shadow w-[240px] bg-gray-900"
+							class="absolute z-40 bottom-[70px] 4.5rem rounded-lg shadow w-[240px] bg-gray-900"
 						>
 							<div class="py-2 w-full">
 								{#if $user.role === 'admin'}
