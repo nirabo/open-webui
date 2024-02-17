@@ -1,28 +1,9 @@
 services:
   litellm:
-    build:
-      context: ../litellm/
-      dockerfile: ../litellm/Dockerfile
-    command:
-      - --config
-      - /app/conf/config.yaml
-      - --port
-      - "8000"
-      - --num_workers
-      - "8"
-      - "--detailed_debug"
-    image: litellm-proxy
-    networks:
-      default: null
+    image: ghcr.io/berriai/litellm:main-latest
     ports:
-      - mode: ingress
-        target: 8000
-        published: 12345
-        protocol: tcp
+      - "12345:8000" # Map the container port to the host, change the host port if necessary
     volumes:
-      - type: bind
-        source: ./my/litellm.proxy.yaml
-        target: /app/conf/config.yaml
-        read_only: true
-        bind:
-          create_host_path: true
+      - ./my/litellm.proxy.yaml:/app/config.yaml # Mount the local configuration file
+    # You can change the port or number of workers as per your requirements or pass any new supported CLI augument. Make sure the port passed here matches with the container port defined above in `ports` value
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]

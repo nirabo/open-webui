@@ -17,15 +17,14 @@ model_list: # will route requests to the least busy ollama model
   - model_name: llama2
     litellm_params: 
       model: "ollama/llama2"
+      temperature: 0.2
+
+  - model_name: codellama:13b-instruct
+    litellm_params:
+      model: "ollama/codellama:13b-instruct"
+      temperature: 0.2
 
   - model_name: codellama
     litellm_params: 
       model: "ollama/codellama:7b"
-
-  # - model_name: codellama:13b-instruct
-  #   litellm_params:
-  #     model: "ollama/codellama:13b-instruct"
-
-  # - model_name: codellama:7b-code
-  #   litellm_params:
-  #     model: "ollama/codellama:7b-code"
+      temperature: 0.2
