@@ -5,7 +5,6 @@ docker compose \
 	-f docker-compose.gpu.yaml \
 	-f docker-compose.api.yaml \
 	-f docker-compose.data.yaml \
-	-f docker-compose.litellm.proxy.yaml \
     $@
 
 

@@ -1,36 +1,65 @@
-version: '3.8'
-
+name: ollama-webui
 services:
   ollama:
-    volumes:
-      - ollama:/root/.ollama
     container_name: ollama
-    pull_policy: always
-    tty: true
-    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities:
+                - gpu
+              driver: nvidia
+              count: 1
     image: ollama/ollama:latest
-
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 11434
+        published: "11434"
+        protocol: tcp
+    pull_policy: always
+    restart: unless-stopped
+    tty: true
+    volumes:
+      - type: bind
+        source: /media/lpetrov/4TB/opt/ollama-data
+        target: /root/.ollama
+        bind:
+          create_host_path: true
   open-webui:
     build:
-      context: .
-      args:
-        OLLAMA_API_BASE_URL: '/ollama/api'
+      context: /home/lpetrov/projects/sandbox/ai/ollama-webui
       dockerfile: Dockerfile
-    image: ghcr.io/open-webui/open-webui:main
+      args:
+        OLLAMA_API_BASE_URL: /ollama/api
     container_name: open-webui
-    volumes:
-      - open-webui:/app/backend/data
     depends_on:
-      - ollama
-    ports:
-      - ${OLLAMA_WEBUI_PORT-3000}:8080
+      ollama:
+        condition: service_started
+        required: true
     environment:
-      - 'OLLAMA_API_BASE_URL=http://ollama:11434/api'
-      - 'WEBUI_SECRET_KEY='
+      OLLAMA_API_BASE_URL: http://ollama:11434/api
+      WEBUI_SECRET_KEY: ""
     extra_hosts:
-      - host.docker.internal:host-gateway
+      - host.docker.internal=host-gateway
+    image: ghcr.io/open-webui/open-webui:main
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8080
+        published: "3000"
+        protocol: tcp
     restart: unless-stopped
-
+    volumes:
+      - type: volume
+        source: open-webui
+        target: /app/backend/data
+        volume: {}
+networks:
+  default:
+    name: ollama-webui_default
 volumes:
-  ollama: {}
-  open-webui: {}
+  open-webui:
+    name: ollama-webui_open-webui
