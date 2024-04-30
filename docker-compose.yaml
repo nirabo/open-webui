@@ -9,6 +9,8 @@ services:
     tty: true
     restart: unless-stopped
     image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
+    environment:
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-"chrome-extension://*"}
 
   open-webui:
     build:
