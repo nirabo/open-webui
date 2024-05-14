@@ -1,9 +1,10 @@
 import { OPENAI_API_BASE_URL } from '$lib/constants';
+import { promptTemplate } from '$lib/utils';
 
-export const getOpenAIUrl = async (token: string = '') => {
+export const getOpenAIUrls = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${OPENAI_API_BASE_URL}/url`, {
+	const res = await fetch(`${OPENAI_API_BASE_URL}/urls`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -29,13 +30,13 @@ export const getOpenAIUrl = async (token: string = '') => {
 		throw error;
 	}
 
-	return res.OPENAI_API_BASE_URL;
+	return res.OPENAI_API_BASE_URLS;
 };
 
-export const updateOpenAIUrl = async (token: string = '', url: string) => {
+export const updateOpenAIUrls = async (token: string = '', urls: string[]) => {
 	let error = null;
 
-	const res = await fetch(`${OPENAI_API_BASE_URL}/url/update`, {
+	const res = await fetch(`${OPENAI_API_BASE_URL}/urls/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -43,7 +44,7 @@ export const updateOpenAIUrl = async (token: string = '', url: string) => {
 			...(token && { authorization: `Bearer ${token}` })
 		},
 		body: JSON.stringify({
-			url: url
+			urls: urls
 		})
 	})
 		.then(async (res) => {
@@ -64,13 +65,13 @@ export const updateOpenAIUrl = async (token: string = '', url: string) => {
 		throw error;
 	}
 
-	return res.OPENAI_API_BASE_URL;
+	return res.OPENAI_API_BASE_URLS;
 };
 
-export const getOpenAIKey = async (token: string = '') => {
+export const getOpenAIKeys = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${OPENAI_API_BASE_URL}/key`, {
+	const res = await fetch(`${OPENAI_API_BASE_URL}/keys`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -96,13 +97,13 @@ export const getOpenAIKey = async (token: string = '') => {
 		throw error;
 	}
 
-	return res.OPENAI_API_KEY;
+	return res.OPENAI_API_KEYS;
 };
 
-export const updateOpenAIKey = async (token: string = '', key: string) => {
+export const updateOpenAIKeys = async (token: string = '', keys: string[]) => {
 	let error = null;
 
-	const res = await fetch(`${OPENAI_API_BASE_URL}/key/update`, {
+	const res = await fetch(`${OPENAI_API_BASE_URL}/keys/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -110,7 +111,7 @@ export const updateOpenAIKey = async (token: string = '', key: string) => {
 			...(token && { authorization: `Bearer ${token}` })
 		},
 		body: JSON.stringify({
-			key: key
+			keys: keys
 		})
 	})
 		.then(async (res) => {
@@ -131,7 +132,7 @@ export const updateOpenAIKey = async (token: string = '', key: string) => {
 		throw error;
 	}
 
-	return res.OPENAI_API_KEY;
+	return res.OPENAI_API_KEYS;
 };
 
 export const getOpenAIModels = async (token: string = '') => {
@@ -150,7 +151,6 @@ export const getOpenAIModels = async (token: string = '') => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
 			error = `OpenAI: ${err?.error?.message ?? 'Network Problem'}`;
 			return [];
 		});
@@ -163,7 +163,7 @@ export const getOpenAIModels = async (token: string = '') => {
 
 	return models
 		? models
-				.map((model) => ({ name: model.id, external: true }))
+				.map((model) => ({ id: model.id, name: model.name ?? model.id, external: true }))
 				.sort((a, b) => {
 					return a.name.localeCompare(b.name);
 				})
@@ -200,17 +200,23 @@ export const getOpenAIModelsDirect = async (
 	const models = Array.isArray(res) ? res : res?.data ?? null;
 
 	return models
-		.map((model) => ({ name: model.id, external: true }))
+		.map((model) => ({ id: model.id, name: model.name ?? model.id, external: true }))
 		.filter((model) => (base_url.includes('openai') ? model.name.includes('gpt') : true))
 		.sort((a, b) => {
 			return a.name.localeCompare(b.name);
 		});
 };
 
-export const generateOpenAIChatCompletion = async (token: string = '', body: object) => {
+export const generateOpenAIChatCompletion = async (
+	token: string = '',
+	body: object,
+	url: string = OPENAI_API_BASE_URL
+): Promise<[Response | null, AbortController]> => {
+	const controller = new AbortController();
 	let error = null;
 
-	const res = await fetch(`${OPENAI_API_BASE_URL}/chat/completions`, {
+	const res = await fetch(`${url}/chat/completions`, {
+		signal: controller.signal,
 		method: 'POST',
 		headers: {
 			Authorization: `Bearer ${token}`,
@@ -227,13 +233,14 @@ export const generateOpenAIChatCompletion = async (token: string = '', body: obj
 		throw error;
 	}
 
-	return res;
+	return [res, controller];
 };
 
 export const synthesizeOpenAISpeech = async (
 	token: string = '',
 	speaker: string = 'alloy',
-	text: string = ''
+	text: string = '',
+	model: string = 'tts-1'
 ) => {
 	let error = null;
 
@@ -244,7 +251,7 @@ export const synthesizeOpenAISpeech = async (
 			'Content-Type': 'application/json'
 		},
 		body: JSON.stringify({
-			model: 'tts-1',
+			model: model,
 			input: text,
 			voice: speaker
 		})
@@ -259,4 +266,56 @@ export const synthesizeOpenAISpeech = async (
 	}
 
 	return res;
+};
+
+export const generateTitle = async (
+	token: string = '',
+	template: string,
+	model: string,
+	prompt: string,
+	url: string = OPENAI_API_BASE_URL
+) => {
+	let error = null;
+
+	template = promptTemplate(template, prompt);
+
+	console.log(template);
+
+	const res = await fetch(`${url}/chat/completions`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		},
+		body: JSON.stringify({
+			model: model,
+			messages: [
+				{
+					role: 'user',
+					content: template
+				}
+			],
+			stream: false,
+			// Restricting the max tokens to 50 to avoid long titles
+			max_tokens: 50
+		})
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.log(err);
+			if ('detail' in err) {
+				error = err.detail;
+			}
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res?.choices[0]?.message?.content.replace(/["']/g, '') ?? 'New Chat';
 };

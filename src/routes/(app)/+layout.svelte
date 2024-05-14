@@ -1,17 +1,19 @@
 <script lang="ts">
-	import toast from 'svelte-french-toast';
+	import { toast } from 'svelte-sonner';
+	import { onMount, tick, getContext } from 'svelte';
 	import { openDB, deleteDB } from 'idb';
-	import { onMount, tick } from 'svelte';
-	import { goto } from '$app/navigation';
-
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 
-	import { getOllamaModels, getOllamaVersion } from '$lib/apis/ollama';
+	import { goto } from '$app/navigation';
+
+	import { getModels as _getModels } from '$lib/utils';
+	import { getOllamaVersion } from '$lib/apis/ollama';
 	import { getModelfiles } from '$lib/apis/modelfiles';
 	import { getPrompts } from '$lib/apis/prompts';
 
-	import { getOpenAIModels } from '$lib/apis/openai';
+	import { getDocs } from '$lib/apis/documents';
+	import { getAllChatTags } from '$lib/apis/chats';
 
 	import {
 		user,
@@ -21,45 +23,31 @@
 		modelfiles,
 		prompts,
 		documents,
-		tags
+		tags,
+		showChangelog,
+		config
 	} from '$lib/stores';
 	import { REQUIRED_OLLAMA_VERSION, WEBUI_API_BASE_URL } from '$lib/constants';
+	import { compareVersion } from '$lib/utils';
 
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
-	import { checkVersion } from '$lib/utils';
 	import ShortcutsModal from '$lib/components/chat/ShortcutsModal.svelte';
-	import { getDocs } from '$lib/apis/documents';
-	import { getAllChatTags } from '$lib/apis/chats';
+	import ChangelogModal from '$lib/components/ChangelogModal.svelte';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
+
+	const i18n = getContext('i18n');
 
 	let ollamaVersion = '';
 	let loaded = false;
-
+	let showShortcutsButtonElement: HTMLButtonElement;
 	let DB = null;
 	let localDBChats = [];
 
 	let showShortcuts = false;
 
 	const getModels = async () => {
-		let models = [];
-		models.push(
-			...(await getOllamaModels(localStorage.token).catch((error) => {
-				toast.error(error);
-				return [];
-			}))
-		);
-
-		// $settings.OPENAI_API_BASE_URL ?? 'https://api.openai.com/v1',
-		// 		$settings.OPENAI_API_KEY
-
-		const openAIModels = await getOpenAIModels(localStorage.token).catch((error) => {
-			console.log(error);
-			return null;
-		});
-
-		models.push(...(openAIModels ? [{ name: 'hr' }, ...openAIModels] : []));
-
-		return models;
+		return _getModels(localStorage.token);
 	};
 
 	const setOllamaVersion = async (version: string = '') => {
@@ -72,7 +60,7 @@
 		ollamaVersion = version;
 
 		console.log(ollamaVersion);
-		if (checkVersion(REQUIRED_OLLAMA_VERSION, ollamaVersion)) {
+		if (compareVersion(REQUIRED_OLLAMA_VERSION, ollamaVersion)) {
 			toast.error(`Ollama Version: ${ollamaVersion !== '' ? ollamaVersion : 'Not Detected'}`);
 		}
 	};
@@ -92,17 +80,14 @@
 					if (localDBChats.length === 0) {
 						await deleteDB('Chats');
 					}
-
-					console.log('localdb', localDBChats);
 				}
 
 				console.log(DB);
 			} catch (error) {
 				// IndexedDB Not Found
-				console.log('IDB Not Found');
 			}
 
-			console.log();
+			await models.set(await getModels());
 			await settings.set(JSON.parse(localStorage.getItem('settings') ?? '{}'));
 
 			await modelfiles.set(await getModelfiles(localStorage.token));
@@ -114,8 +99,6 @@
 				// should fetch models
 				await models.set(await getModels());
 			});
-
-			await setOllamaVersion();
 
 			document.addEventListener('keydown', function (event) {
 				const isCtrlPressed = event.ctrlKey || event.metaKey; // metaKey is for Cmd key on Mac
@@ -171,16 +154,20 @@
 				if (isCtrlPressed && event.key === '.') {
 					event.preventDefault();
 					console.log('openSettings');
-					document.getElementById('open-settings-button')?.click();
+					showSettings.set(!$showSettings);
 				}
 
 				// Check if Ctrl + / is pressed
 				if (isCtrlPressed && event.key === '/') {
 					event.preventDefault();
 					console.log('showShortcuts');
-					document.getElementById('show-shortcuts-button')?.click();
+					showShortcutsButtonElement.click();
 				}
 			});
+
+			if ($user.role === 'admin') {
+				showChangelog.set(localStorage.version !== $config.version);
+			}
 
 			await tick();
 		}
@@ -189,10 +176,11 @@
 	});
 </script>
 
-{#if loaded}
-	<div class=" hidden lg:flex fixed bottom-0 right-0 px-3 py-3 z-10">
+<div class=" hidden lg:flex fixed bottom-0 right-0 px-3 py-3 z-10">
+	<Tooltip content={$i18n.t('Help')} placement="left">
 		<button
 			id="show-shortcuts-button"
+			bind:this={showShortcutsButtonElement}
 			class="text-gray-600 dark:text-gray-300 bg-gray-300/20 w-6 h-6 flex items-center justify-center text-xs rounded-full"
 			on:click={() => {
 				showShortcuts = !showShortcuts;
@@ -200,165 +188,116 @@
 		>
 			?
 		</button>
-	</div>
+	</Tooltip>
+</div>
 
-	<ShortcutsModal bind:show={showShortcuts} />
+<ShortcutsModal bind:show={showShortcuts} />
+<SettingsModal bind:show={$showSettings} />
+<ChangelogModal bind:show={$showChangelog} />
 
-	<div class="app relative">
-		{#if !['user', 'admin'].includes($user.role)}
-			<div class="fixed w-full h-full flex z-50">
-				<div
-					class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"
-				>
-					<div class="m-auto pb-44 flex flex-col justify-center">
-						<div class="max-w-md">
-							<div class="text-center dark:text-white text-2xl font-medium z-50">
-								Account Activation Pending<br /> Contact Admin for WebUI Access
-							</div>
+<div class="app relative">
+	<div
+		class=" text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-900 min-h-screen overflow-auto flex flex-row"
+	>
+		{#if loaded}
+			{#if !['user', 'admin'].includes($user.role)}
+				<div class="fixed w-full h-full flex z-[999]">
+					<div
+						class="absolute w-full h-full backdrop-blur-lg bg-white/10 dark:bg-gray-900/50 flex justify-center"
+					>
+						<div class="m-auto pb-10 flex flex-col justify-center">
+							<div class="max-w-md">
+								<div class="text-center dark:text-white text-2xl font-medium z-50">
+									Account Activation Pending<br /> Contact Admin for WebUI Access
+								</div>
 
-							<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
-								Your account status is currently pending activation. To access the WebUI, please
-								reach out to the administrator. Admins can manage user statuses from the Admin
-								Panel.
-							</div>
+								<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
+									Your account status is currently pending activation. To access the WebUI, please
+									reach out to the administrator. Admins can manage user statuses from the Admin
+									Panel.
+								</div>
 
-							<div class=" mt-6 mx-auto relative group w-fit">
-								<button
-									class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
-									on:click={async () => {
-										location.href = '/';
-									}}
-								>
-									Check Again
-								</button>
-
-								<button
-									class="text-xs text-center w-full mt-2 text-gray-400 underline"
-									on:click={async () => {
-										localStorage.removeItem('token');
-										location.href = '/auth';
-									}}>Sign Out</button
-								>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		{:else if checkVersion(REQUIRED_OLLAMA_VERSION, ollamaVersion ?? '0')}
-			<div class="fixed w-full h-full flex z-50">
-				<div
-					class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"
-				>
-					<div class="m-auto pb-44 flex flex-col justify-center">
-						<div class="max-w-md">
-							<div class="text-center dark:text-white text-2xl font-medium z-50">
-								Connection Issue or Update Needed
-							</div>
-
-							<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
-								Oops! It seems like your Ollama needs a little attention. <br
-									class=" hidden sm:flex"
-								/>We've detected either a connection hiccup or observed that you're using an older
-								version. Ensure you're on the latest Ollama version
-								<br class=" hidden sm:flex" />(version
-								<span class=" dark:text-white font-medium">{REQUIRED_OLLAMA_VERSION} or higher</span
-								>) or check your connection.
-
-								<div class="mt-1 text-sm">
-									Trouble accessing Ollama?
-									<a
-										class=" text-black dark:text-white font-semibold underline"
-										href="https://github.com/ollama-webui/ollama-webui#troubleshooting"
-										target="_blank"
+								<div class=" mt-6 mx-auto relative group w-fit">
+									<button
+										class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 text-gray-700 transition font-medium text-sm"
+										on:click={async () => {
+											location.href = '/';
+										}}
 									>
-										Click here for help.
-									</a>
+										{$i18n.t('Check Again')}
+									</button>
+
+									<button
+										class="text-xs text-center w-full mt-2 text-gray-400 underline"
+										on:click={async () => {
+											localStorage.removeItem('token');
+											location.href = '/auth';
+										}}>{$i18n.t('Sign Out')}</button
+									>
 								</div>
 							</div>
+						</div>
+					</div>
+				</div>
+			{:else if localDBChats.length > 0}
+				<div class="fixed w-full h-full flex z-50">
+					<div
+						class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"
+					>
+						<div class="m-auto pb-44 flex flex-col justify-center">
+							<div class="max-w-md">
+								<div class="text-center dark:text-white text-2xl font-medium z-50">
+									Important Update<br /> Action Required for Chat Log Storage
+								</div>
 
-							<div class=" mt-6 mx-auto relative group w-fit">
-								<button
-									class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
-									on:click={async () => {
-										location.href = '/';
-										// await setOllamaVersion();
-									}}
-								>
-									Check Again
-								</button>
+								<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
+									{$i18n.t(
+										"Saving chat logs directly to your browser's storage is no longer supported. Please take a moment to download and delete your chat logs by clicking the button below. Don't worry, you can easily re-import your chat logs to the backend through"
+									)}
+									<span class="font-semibold dark:text-white"
+										>{$i18n.t('Settings')} > {$i18n.t('Chats')} > {$i18n.t('Import Chats')}</span
+									>. {$i18n.t(
+										'This ensures that your valuable conversations are securely saved to your backend database. Thank you!'
+									)}
+								</div>
 
-								<button
-									class="text-xs text-center w-full mt-2 text-gray-400 underline"
-									on:click={async () => {
-										await setOllamaVersion(REQUIRED_OLLAMA_VERSION);
-									}}>Close</button
-								>
+								<div class=" mt-6 mx-auto relative group w-fit">
+									<button
+										class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
+										on:click={async () => {
+											let blob = new Blob([JSON.stringify(localDBChats)], {
+												type: 'application/json'
+											});
+											saveAs(blob, `chat-export-${Date.now()}.json`);
+
+											const tx = DB.transaction('chats', 'readwrite');
+											await Promise.all([tx.store.clear(), tx.done]);
+											await deleteDB('Chats');
+
+											localDBChats = [];
+										}}
+									>
+										Download & Delete
+									</button>
+
+									<button
+										class="text-xs text-center w-full mt-2 text-gray-400 underline"
+										on:click={async () => {
+											localDBChats = [];
+										}}>{$i18n.t('Close')}</button
+									>
+								</div>
 							</div>
 						</div>
 					</div>
 				</div>
-			</div>
-		{:else if localDBChats.length > 0}
-			<div class="fixed w-full h-full flex z-50">
-				<div
-					class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"
-				>
-					<div class="m-auto pb-44 flex flex-col justify-center">
-						<div class="max-w-md">
-							<div class="text-center dark:text-white text-2xl font-medium z-50">
-								Important Update<br /> Action Required for Chat Log Storage
-							</div>
+			{/if}
 
-							<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
-								Saving chat logs directly to your browser's storage is no longer supported. Please
-								take a moment to download and delete your chat logs by clicking the button below.
-								Don't worry, you can easily re-import your chat logs to the backend through <span
-									class="font-semibold dark:text-white">Settings > Chats > Import Chats</span
-								>. This ensures that your valuable conversations are securely saved to your backend
-								database. Thank you!
-							</div>
-
-							<div class=" mt-6 mx-auto relative group w-fit">
-								<button
-									class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
-									on:click={async () => {
-										let blob = new Blob([JSON.stringify(localDBChats)], {
-											type: 'application/json'
-										});
-										saveAs(blob, `chat-export-${Date.now()}.json`);
-
-										const tx = DB.transaction('chats', 'readwrite');
-										await Promise.all([tx.store.clear(), tx.done]);
-										await deleteDB('Chats');
-
-										localDBChats = [];
-									}}
-								>
-									Download & Delete
-								</button>
-
-								<button
-									class="text-xs text-center w-full mt-2 text-gray-400 underline"
-									on:click={async () => {
-										localDBChats = [];
-									}}>Close</button
-								>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		{/if}
-
-		<div
-			class=" text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-900 min-h-screen overflow-auto flex flex-row"
-		>
 			<Sidebar />
-			<SettingsModal bind:show={$showSettings} />
 			<slot />
-		</div>
+		{/if}
 	</div>
-{/if}
+</div>
 
 <style>
 	.loading {

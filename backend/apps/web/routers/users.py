@@ -7,12 +7,18 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 import time
 import uuid
+import logging
 
 from apps.web.models.users import UserModel, UserUpdateForm, UserRoleUpdateForm, Users
 from apps.web.models.auths import Auths
 
 from utils.utils import get_current_user, get_password_hash, get_admin_user
 from constants import ERROR_MESSAGES
+
+from config import SRC_LOG_LEVELS
+
+log = logging.getLogger(__name__)
+log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 router = APIRouter()
 
@@ -52,7 +58,7 @@ async def update_user_permissions(
 @router.post("/update/role", response_model=Optional[UserModel])
 async def update_user_role(form_data: UserRoleUpdateForm, user=Depends(get_admin_user)):
 
-    if user.id != form_data.id:
+    if user.id != form_data.id and form_data.id != Users.get_first_user().id:
         return Users.update_user_role_by_id(form_data.id, form_data.role)
 
     raise HTTPException(
@@ -83,7 +89,7 @@ async def update_user_by_id(
 
         if form_data.password:
             hashed = get_password_hash(form_data.password)
-            print(hashed)
+            log.debug(f"hashed: {hashed}")
             Auths.update_user_password_by_id(user_id, hashed)
 
         Auths.update_email_by_id(user_id, form_data.email.lower())
