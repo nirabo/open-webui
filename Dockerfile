@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Initialize device type args
 # use build args in the docker build commmand with --build-arg="BUILDARG=true"
-ARG USE_CUDA=false
+ARG USE_CUDA=true
 ARG USE_OLLAMA=false
 # Tested with cu117 for CUDA 11 and cu121 for CUDA 12 (default)
 ARG USE_CUDA_VER=cu121
@@ -61,7 +61,7 @@ ENV LITELLM_LOCAL_MODEL_COST_MAP="True"
 
 #### Other models #########################################################
 ## whisper TTS model settings ##
-ENV WHISPER_MODEL="base" \
+ENV WHISPER_MODEL="medium" \
     WHISPER_MODEL_DIR="/app/backend/data/cache/whisper/models"
 
 ## RAG Embedding model settings ##
