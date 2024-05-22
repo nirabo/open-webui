@@ -1,4 +1,5 @@
 name: ollama-webui
+
 services:
   ollama:
     container_name: ollama
