@@ -1,7 +1,7 @@
 import logging
 import requests
 
-from typing import List, Dict
+from typing import List
 
 from apps.rag.search.main import SearchResult
 from config import SRC_LOG_LEVELS
@@ -52,7 +52,7 @@ def search_searxng(query_url: str, query: str, count: int, **kwargs) -> List[Sea
 
     }
 
-    log.info(f"searching {query_url}")
+    log.debug(f"searching {query_url}")
 
     response = requests.get(
         query_url,
