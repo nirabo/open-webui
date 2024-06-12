@@ -84,9 +84,10 @@ async def create_new_toolkit(
             else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=ERROR_MESSAGES.FILE_EXISTS,
+                    detail=ERROR_MESSAGES.DEFAULT("Error creating toolkit"),
                 )
         except Exception as e:
+            print(e)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=ERROR_MESSAGES.DEFAULT(e),
@@ -174,5 +175,9 @@ async def delete_toolkit_by_id(request: Request, id: str, user=Depends(get_admin
         TOOLS = request.app.state.TOOLS
         if id in TOOLS:
             del TOOLS[id]
+
+        # delete the toolkit file
+        toolkit_path = os.path.join(TOOLS_DIR, f"{id}.py")
+        os.remove(toolkit_path)
 
     return result

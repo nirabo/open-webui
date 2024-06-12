@@ -21,6 +21,16 @@
 	export let tools = {};
 	export let onClose: Function;
 
+	$: tools = Object.fromEntries(
+		Object.keys(tools).map((toolId) => [
+			toolId,
+			{
+				...tools[toolId],
+				enabled: selectedToolIds.includes(toolId)
+			}
+		])
+	);
+
 	let show = false;
 </script>
 
@@ -38,7 +48,7 @@
 
 	<div slot="content">
 		<DropdownMenu.Content
-			class="w-full max-w-[190px] rounded-xl px-1 py-1  border-gray-300/30 dark:border-gray-700/50 z-50 bg-white dark:bg-gray-850 dark:text-white shadow"
+			class="w-full max-w-[200px] rounded-xl px-1 py-1  border-gray-300/30 dark:border-gray-700/50 z-50 bg-white dark:bg-gray-850 dark:text-white shadow"
 			sideOffset={15}
 			alignOffset={-8}
 			side="top"
@@ -46,28 +56,30 @@
 			transition={flyAndScale}
 		>
 			{#if Object.keys(tools).length > 0}
-				{#each Object.keys(tools) as toolId}
-					<div
-						class="flex gap-2 items-center px-3 py-2 text-sm font-medium cursor-pointer rounded-xl"
-					>
-						<div class="flex-1 flex items-center gap-2">
-							<WrenchSolid />
+				<div class="  max-h-28 overflow-y-auto scrollbar-hidden">
+					{#each Object.keys(tools) as toolId}
+						<div
+							class="flex gap-2 items-center px-3 py-2 text-sm font-medium cursor-pointer rounded-xl"
+						>
+							<div class="flex-1 flex items-center gap-2">
+								<WrenchSolid />
+								<Tooltip content={tools[toolId]?.description ?? ''} className="flex-1">
+									<div class=" line-clamp-1">{tools[toolId].name}</div>
+								</Tooltip>
+							</div>
 
-							<Tooltip content={tools[toolId]?.description ?? ''}>
-								<div class="flex items-center line-clamp-1">{tools[toolId].name}</div>
-							</Tooltip>
+							<Switch
+								bind:state={tools[toolId].enabled}
+								on:change={(e) => {
+									selectedToolIds = e.detail
+										? [...selectedToolIds, toolId]
+										: selectedToolIds.filter((id) => id !== toolId);
+								}}
+							/>
 						</div>
+					{/each}
+				</div>
 
-						<Switch
-							bind:state={tools[toolId].enabled}
-							on:change={(e) => {
-								selectedToolIds = e.detail
-									? [...selectedToolIds, toolId]
-									: selectedToolIds.filter((id) => id !== toolId);
-							}}
-						/>
-					</div>
-				{/each}
 				<hr class="border-gray-100 dark:border-gray-800 my-1" />
 			{/if}
 

@@ -42,7 +42,7 @@ def get_tools_specs(tools) -> List[dict]:
                             **(
                                 {
                                     "enum": (
-                                        param_annotation.__args__
+                                        str(param_annotation.__args__)
                                         if hasattr(param_annotation, "__args__")
                                         else None
                                     )
@@ -57,7 +57,7 @@ def get_tools_specs(tools) -> List[dict]:
                         for param_name, param_annotation in get_type_hints(
                             function
                         ).items()
-                        if param_name != "return"
+                        if param_name != "return" and param_name != "__user__"
                     },
                     "required": [
                         name

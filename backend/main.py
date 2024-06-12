@@ -11,6 +11,7 @@ import requests
 import mimetypes
 import shutil
 import os
+import inspect
 import asyncio
 
 from fastapi import FastAPI, Request, Depends, status, UploadFile, File, Form
@@ -167,10 +168,24 @@ app.state.MODELS = {}
 origins = ["*"]
 
 
-async def get_function_call_response(prompt, tool_id, template, task_model_id, user):
+async def get_function_call_response(messages, tool_id, template, task_model_id, user):
     tool = Tools.get_tool_by_id(tool_id)
     tools_specs = json.dumps(tool.specs, indent=2)
     content = tools_function_calling_generation_template(template, tools_specs)
+
+    user_message = get_last_user_message(messages)
+    prompt = (
+        "History:\n"
+        + "\n".join(
+            [
+                f"{message['role'].upper()}: \"\"\"{message['content']}\"\"\""
+                for message in messages[::-1][:4]
+            ]
+        )
+        + f"\nQuery: {user_message}"
+    )
+
+    print(prompt)
 
     payload = {
         "model": task_model_id,
@@ -194,16 +209,21 @@ async def get_function_call_response(prompt, tool_id, template, task_model_id, u
             response = await generate_openai_chat_completion(payload, user=user)
 
         content = None
-        async for chunk in response.body_iterator:
-            data = json.loads(chunk.decode("utf-8"))
-            content = data["choices"][0]["message"]["content"]
 
-        # Cleanup any remaining background tasks if necessary
-        if response.background is not None:
-            await response.background()
+        if hasattr(response, "body_iterator"):
+            async for chunk in response.body_iterator:
+                data = json.loads(chunk.decode("utf-8"))
+                content = data["choices"][0]["message"]["content"]
+
+            # Cleanup any remaining background tasks if necessary
+            if response.background is not None:
+                await response.background()
+        else:
+            content = response["choices"][0]["message"]["content"]
 
         # Parse the function response
         if content is not None:
+            print(f"content: {content}")
             result = json.loads(content)
             print(result)
 
@@ -218,7 +238,25 @@ async def get_function_call_response(prompt, tool_id, template, task_model_id, u
                 function = getattr(toolkit_module, result["name"])
                 function_result = None
                 try:
-                    function_result = function(**result["parameters"])
+                    # Get the signature of the function
+                    sig = inspect.signature(function)
+                    # Check if '__user__' is a parameter of the function
+                    if "__user__" in sig.parameters:
+                        # Call the function with the '__user__' parameter included
+                        function_result = function(
+                            **{
+                                **result["parameters"],
+                                "__user__": {
+                                    "id": user.id,
+                                    "email": user.email,
+                                    "name": user.name,
+                                    "role": user.role,
+                                },
+                            }
+                        )
+                    else:
+                        # Call the function without modifying the parameters
+                        function_result = function(**result["parameters"])
                 except Exception as e:
                     print(e)
 
@@ -280,15 +318,16 @@ class ChatCompletionMiddleware(BaseHTTPMiddleware):
                 ):
                     task_model_id = app.state.config.TASK_MODEL_EXTERNAL
 
+            prompt = get_last_user_message(data["messages"])
             context = ""
 
             # If tool_ids field is present, call the functions
             if "tool_ids" in data:
-                prompt = get_last_user_message(data["messages"])
+                print(data["tool_ids"])
                 for tool_id in data["tool_ids"]:
                     print(tool_id)
                     response = await get_function_call_response(
-                        prompt=prompt,
+                        messages=data["messages"],
                         tool_id=tool_id,
                         template=app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE,
                         task_model_id=task_model_id,
@@ -299,7 +338,7 @@ class ChatCompletionMiddleware(BaseHTTPMiddleware):
                         context += ("\n" if context != "" else "") + response
                 del data["tool_ids"]
 
-                print(context)
+                print(f"tool_context: {context}")
 
             # If docs field is present, generate RAG completions
             if "docs" in data:
@@ -818,7 +857,7 @@ async def get_tools_function_calling(form_data: dict, user=Depends(get_verified_
     template = app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE
 
     return await get_function_call_response(
-        form_data["prompt"], form_data["tool_id"], template, model_id, user
+        form_data["messages"], form_data["tool_id"], template, model_id, user
     )
 
 
