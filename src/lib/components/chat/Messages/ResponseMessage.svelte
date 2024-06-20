@@ -15,12 +15,13 @@
 
 	const dispatch = createEventDispatcher();
 
-	import { config, models, settings } from '$lib/stores';
+	import { config, models, settings, user } from '$lib/stores';
 	import { synthesizeOpenAISpeech } from '$lib/apis/audio';
 	import { imageGenerations } from '$lib/apis/images';
 	import {
 		approximateToHumanReadable,
 		extractSentences,
+		replaceTokens,
 		revertSanitizedResponseContent,
 		sanitizeResponseContent
 	} from '$lib/utils';
@@ -74,7 +75,9 @@
 
 	let selectedCitation = null;
 
-	$: tokens = marked.lexer(sanitizeResponseContent(message?.content));
+	$: tokens = marked.lexer(
+		replaceTokens(sanitizeResponseContent(message?.content), model?.name, $user?.name)
+	);
 
 	const renderer = new marked.Renderer();
 
@@ -459,6 +462,18 @@
 								on:input={(e) => {
 									e.target.style.height = '';
 									e.target.style.height = `${e.target.scrollHeight}px`;
+								}}
+								on:keydown={(e) => {
+									if (e.key === 'Escape') {
+										document.getElementById('close-edit-message-button')?.click();
+									}
+
+									const isCmdOrCtrlPressed = e.metaKey || e.ctrlKey;
+									const isEnterPressed = e.key === 'Enter';
+
+									if (isCmdOrCtrlPressed && isEnterPressed) {
+										document.getElementById('save-edit-message-button')?.click();
+									}
 								}}
 							/>
 

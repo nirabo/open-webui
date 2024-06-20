@@ -11,6 +11,7 @@ import requests
 import mimetypes
 import shutil
 import os
+import uuid
 import inspect
 import asyncio
 
@@ -76,6 +77,7 @@ from config import (
     VERSION,
     CHANGELOG,
     FRONTEND_BUILD_DIR,
+    UPLOAD_DIR,
     CACHE_DIR,
     STATIC_DIR,
     ENABLE_OPENAI_API,
@@ -168,7 +170,9 @@ app.state.MODELS = {}
 origins = ["*"]
 
 
-async def get_function_call_response(messages, tool_id, template, task_model_id, user):
+async def get_function_call_response(
+    messages, files, tool_id, template, task_model_id, user
+):
     tool = Tools.get_tool_by_id(tool_id)
     tools_specs = json.dumps(tool.specs, indent=2)
     content = tools_function_calling_generation_template(template, tools_specs)
@@ -206,9 +210,7 @@ async def get_function_call_response(messages, tool_id, template, task_model_id,
     response = None
     try:
         if model["owned_by"] == "ollama":
-            response = await generate_ollama_chat_completion(
-                OpenAIChatCompletionForm(**payload), user=user
-            )
+            response = await generate_ollama_chat_completion(payload, user=user)
         else:
             response = await generate_openai_chat_completion(payload, user=user)
 
@@ -239,38 +241,70 @@ async def get_function_call_response(messages, tool_id, template, task_model_id,
                     toolkit_module = load_toolkit_module_by_id(tool_id)
                     webui_app.state.TOOLS[tool_id] = toolkit_module
 
+                file_handler = False
+                # check if toolkit_module has file_handler self variable
+                if hasattr(toolkit_module, "file_handler"):
+                    file_handler = True
+                    print("file_handler: ", file_handler)
+
                 function = getattr(toolkit_module, result["name"])
                 function_result = None
                 try:
                     # Get the signature of the function
                     sig = inspect.signature(function)
-                    # Check if '__user__' is a parameter of the function
+                    params = result["parameters"]
+
                     if "__user__" in sig.parameters:
                         # Call the function with the '__user__' parameter included
-                        function_result = function(
-                            **{
-                                **result["parameters"],
-                                "__user__": {
-                                    "id": user.id,
-                                    "email": user.email,
-                                    "name": user.name,
-                                    "role": user.role,
-                                },
-                            }
-                        )
-                    else:
-                        # Call the function without modifying the parameters
-                        function_result = function(**result["parameters"])
+                        params = {
+                            **params,
+                            "__user__": {
+                                "id": user.id,
+                                "email": user.email,
+                                "name": user.name,
+                                "role": user.role,
+                            },
+                        }
+
+                    if "__messages__" in sig.parameters:
+                        # Call the function with the '__messages__' parameter included
+                        params = {
+                            **params,
+                            "__messages__": messages,
+                        }
+
+                    if "__files__" in sig.parameters:
+                        # Call the function with the '__files__' parameter included
+                        params = {
+                            **params,
+                            "__files__": files,
+                        }
+
+                    if "__model__" in sig.parameters:
+                        # Call the function with the '__model__' parameter included
+                        params = {
+                            **params,
+                            "__model__": model,
+                        }
+
+                    if "__id__" in sig.parameters:
+                        # Call the function with the '__id__' parameter included
+                        params = {
+                            **params,
+                            "__id__": tool_id,
+                        }
+
+                    function_result = function(**params)
                 except Exception as e:
                     print(e)
 
                 # Add the function result to the system prompt
-                if function_result:
-                    return function_result
+                if function_result is not None:
+                    return function_result, file_handler
     except Exception as e:
         print(f"Error: {e}")
 
-    return None
+    return None, False
 
 
 class ChatCompletionMiddleware(BaseHTTPMiddleware):
@@ -291,7 +325,8 @@ class ChatCompletionMiddleware(BaseHTTPMiddleware):
             data = json.loads(body_str) if body_str else {}
 
             user = get_current_user(
-                get_http_authorization_cred(request.headers.get("Authorization"))
+                request,
+                get_http_authorization_cred(request.headers.get("Authorization")),
             )
 
             # Remove the citations from the body
@@ -326,60 +361,68 @@ class ChatCompletionMiddleware(BaseHTTPMiddleware):
             context = ""
 
             # If tool_ids field is present, call the functions
+
+            skip_files = False
             if "tool_ids" in data:
                 print(data["tool_ids"])
                 for tool_id in data["tool_ids"]:
                     print(tool_id)
                     try:
-                        response = await get_function_call_response(
+                        response, file_handler = await get_function_call_response(
                             messages=data["messages"],
+                            files=data.get("files", []),
                             tool_id=tool_id,
                             template=app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE,
                             task_model_id=task_model_id,
                             user=user,
                         )
 
-                        if response:
+                        print(file_handler)
+                        if isinstance(response, str):
                             context += ("\n" if context != "" else "") + response
+
+                        if file_handler:
+                            skip_files = True
+
                     except Exception as e:
                         print(f"Error: {e}")
                 del data["tool_ids"]
 
                 print(f"tool_context: {context}")
 
-            # If docs field is present, generate RAG completions
-            if "docs" in data:
-                data = {**data}
-                rag_context, citations = get_rag_context(
-                    docs=data["docs"],
-                    messages=data["messages"],
-                    embedding_function=rag_app.state.EMBEDDING_FUNCTION,
-                    k=rag_app.state.config.TOP_K,
-                    reranking_function=rag_app.state.sentence_transformer_rf,
-                    r=rag_app.state.config.RELEVANCE_THRESHOLD,
-                    hybrid_search=rag_app.state.config.ENABLE_RAG_HYBRID_SEARCH,
-                )
+            # If files field is present, generate RAG completions
+            # If skip_files is True, skip the RAG completions
+            if "files" in data:
+                if not skip_files:
+                    data = {**data}
+                    rag_context, citations = get_rag_context(
+                        files=data["files"],
+                        messages=data["messages"],
+                        embedding_function=rag_app.state.EMBEDDING_FUNCTION,
+                        k=rag_app.state.config.TOP_K,
+                        reranking_function=rag_app.state.sentence_transformer_rf,
+                        r=rag_app.state.config.RELEVANCE_THRESHOLD,
+                        hybrid_search=rag_app.state.config.ENABLE_RAG_HYBRID_SEARCH,
+                    )
+                    if rag_context:
+                        context += ("\n" if context != "" else "") + rag_context
 
-                if rag_context:
-                    context += ("\n" if context != "" else "") + rag_context
+                    log.debug(f"rag_context: {rag_context}, citations: {citations}")
+                else:
+                    return_citations = False
 
-                del data["docs"]
-
-                log.debug(f"rag_context: {rag_context}, citations: {citations}")
+                del data["files"]
 
             if context != "":
                 system_prompt = rag_template(
                     rag_app.state.config.RAG_TEMPLATE, context, prompt
                 )
-
                 print(system_prompt)
-
                 data["messages"] = add_or_update_system_message(
                     f"\n{system_prompt}", data["messages"]
                 )
 
             modified_body_bytes = json.dumps(data).encode("utf-8")
-
             # Replace the request body with the modified one
             request._body = modified_body_bytes
             # Set custom header to ensure content-length matches new body length
@@ -428,7 +471,7 @@ app.add_middleware(ChatCompletionMiddleware)
 
 
 def filter_pipeline(payload, user):
-    user = {"id": user.id, "name": user.name, "role": user.role}
+    user = {"id": user.id, "email": user.email, "name": user.name, "role": user.role}
     model_id = payload["model"]
     filters = [
         model
@@ -516,7 +559,8 @@ class PipelineMiddleware(BaseHTTPMiddleware):
             data = json.loads(body_str) if body_str else {}
 
             user = get_current_user(
-                get_http_authorization_cred(request.headers.get("Authorization"))
+                request,
+                get_http_authorization_cred(request.headers.get("Authorization")),
             )
 
             try:
@@ -792,9 +836,7 @@ async def generate_title(form_data: dict, user=Depends(get_verified_user)):
         )
 
     if model["owned_by"] == "ollama":
-        return await generate_ollama_chat_completion(
-            OpenAIChatCompletionForm(**payload), user=user
-        )
+        return await generate_ollama_chat_completion(payload, user=user)
     else:
         return await generate_openai_chat_completion(payload, user=user)
 
@@ -857,9 +899,7 @@ async def generate_search_query(form_data: dict, user=Depends(get_verified_user)
         )
 
     if model["owned_by"] == "ollama":
-        return await generate_ollama_chat_completion(
-            OpenAIChatCompletionForm(**payload), user=user
-        )
+        return await generate_ollama_chat_completion(payload, user=user)
     else:
         return await generate_openai_chat_completion(payload, user=user)
 
@@ -926,9 +966,7 @@ Message: """{{prompt}}"""
         )
 
     if model["owned_by"] == "ollama":
-        return await generate_ollama_chat_completion(
-            OpenAIChatCompletionForm(**payload), user=user
-        )
+        return await generate_ollama_chat_completion(payload, user=user)
     else:
         return await generate_openai_chat_completion(payload, user=user)
 
@@ -961,8 +999,13 @@ async def get_tools_function_calling(form_data: dict, user=Depends(get_verified_
     template = app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE
 
     try:
-        context = await get_function_call_response(
-            form_data["messages"], form_data["tool_id"], template, model_id, user
+        context, file_handler = await get_function_call_response(
+            form_data["messages"],
+            form_data.get("files", []),
+            form_data["tool_id"],
+            template,
+            model_id,
+            user,
         )
         return context
     except Exception as e:
@@ -985,9 +1028,7 @@ async def generate_chat_completions(form_data: dict, user=Depends(get_verified_u
     print(model)
 
     if model["owned_by"] == "ollama":
-        return await generate_ollama_chat_completion(
-            OpenAIChatCompletionForm(**form_data), user=user
-        )
+        return await generate_ollama_chat_completion(form_data, user=user)
     else:
         return await generate_openai_chat_completion(form_data, user=user)
 
