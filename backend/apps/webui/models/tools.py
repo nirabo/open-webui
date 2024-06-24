@@ -8,6 +8,8 @@ from apps.webui.internal.db import DB, JSONField
 from apps.webui.models.users import Users
 
 import json
+import copy
+
 
 from config import SRC_LOG_LEVELS
 
@@ -26,6 +28,7 @@ class Tool(Model):
     content = TextField()
     specs = JSONField()
     meta = JSONField()
+    valves = JSONField()
     updated_at = BigIntegerField()
     created_at = BigIntegerField()
 
@@ -35,6 +38,7 @@ class Tool(Model):
 
 class ToolMeta(BaseModel):
     description: Optional[str] = None
+    manifest: Optional[dict] = {}
 
 
 class ToolModel(BaseModel):
@@ -67,6 +71,10 @@ class ToolForm(BaseModel):
     name: str
     content: str
     meta: ToolMeta
+
+
+class ToolValves(BaseModel):
+    valves: Optional[dict] = None
 
 
 class ToolsTable:
@@ -107,19 +115,41 @@ class ToolsTable:
     def get_tools(self) -> List[ToolModel]:
         return [ToolModel(**model_to_dict(tool)) for tool in Tool.select()]
 
+    def get_tool_valves_by_id(self, id: str) -> Optional[dict]:
+        try:
+            tool = Tool.get(Tool.id == id)
+            return tool.valves if tool.valves else {}
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return None
+
+    def update_tool_valves_by_id(self, id: str, valves: dict) -> Optional[ToolValves]:
+        try:
+            query = Tool.update(
+                **{"valves": valves},
+                updated_at=int(time.time()),
+            ).where(Tool.id == id)
+            query.execute()
+
+            tool = Tool.get(Tool.id == id)
+            return ToolValves(**model_to_dict(tool))
+        except:
+            return None
+
     def get_user_valves_by_id_and_user_id(
         self, id: str, user_id: str
     ) -> Optional[dict]:
         try:
             user = Users.get_user_by_id(user_id)
+            user_settings = user.settings.model_dump()
 
             # Check if user has "tools" and "valves" settings
-            if "tools" not in user.settings:
-                user.settings["tools"] = {}
-            if "valves" not in user.settings["tools"]:
-                user.settings["tools"]["valves"] = {}
+            if "tools" not in user_settings:
+                user_settings["tools"] = {}
+            if "valves" not in user_settings["tools"]:
+                user_settings["tools"]["valves"] = {}
 
-            return user.settings["tools"]["valves"].get(id, {})
+            return user_settings["tools"]["valves"].get(id, {})
         except Exception as e:
             print(f"An error occurred: {e}")
             return None
@@ -129,20 +159,21 @@ class ToolsTable:
     ) -> Optional[dict]:
         try:
             user = Users.get_user_by_id(user_id)
+            user_settings = user.settings.model_dump()
 
             # Check if user has "tools" and "valves" settings
-            if "tools" not in user.settings:
-                user.settings["tools"] = {}
-            if "valves" not in user.settings["tools"]:
-                user.settings["tools"]["valves"] = {}
+            if "tools" not in user_settings:
+                user_settings["tools"] = {}
+            if "valves" not in user_settings["tools"]:
+                user_settings["tools"]["valves"] = {}
 
-            user.settings["tools"]["valves"][id] = valves
+            user_settings["tools"]["valves"][id] = valves
 
             # Update the user settings in the database
-            query = Users.update_user_by_id(user_id, {"settings": user.settings})
+            query = Users.update_user_by_id(user_id, {"settings": user_settings})
             query.execute()
 
-            return user.settings["tools"]["valves"][id]
+            return user_settings["tools"]["valves"][id]
         except Exception as e:
             print(f"An error occurred: {e}")
             return None
