@@ -4,7 +4,7 @@
 	const { saveAs } = fileSaver;
 
 	import { WEBUI_NAME, functions, models } from '$lib/stores';
-	import { onMount, getContext } from 'svelte';
+	import { onMount, getContext, tick } from 'svelte';
 	import { createNewPrompt, deletePromptByCommand, getPrompts } from '$lib/apis/prompts';
 
 	import { goto } from '$app/navigation';
@@ -81,7 +81,7 @@
 		});
 
 		if (res) {
-			toast.success('Function deleted successfully');
+			toast.success($i18n.t('Function deleted successfully'));
 
 			functions.set(await getFunctions(localStorage.token));
 			models.set(await getModels(localStorage.token));
@@ -387,7 +387,15 @@
 </div>
 
 <ManifestModal bind:show={showManifestModal} manifest={selectedFunction?.meta?.manifest ?? {}} />
-<ValvesModal bind:show={showValvesModal} type="function" id={selectedFunction?.id ?? null} />
+<ValvesModal
+	bind:show={showValvesModal}
+	type="function"
+	id={selectedFunction?.id ?? null}
+	on:save={async () => {
+		await tick();
+		models.set(await getModels(localStorage.token));
+	}}
+/>
 
 <ConfirmDialog
 	bind:show={showConfirm}
@@ -404,7 +412,7 @@
 				});
 			}
 
-			toast.success('Functions imported successfully');
+			toast.success($i18n.t('Functions imported successfully'));
 			functions.set(await getFunctions(localStorage.token));
 			models.set(await getModels(localStorage.token));
 		};

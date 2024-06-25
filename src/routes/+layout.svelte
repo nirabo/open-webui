@@ -18,6 +18,7 @@
 		USAGE_POOL
 	} from '$lib/stores';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { Toaster, toast } from 'svelte-sonner';
 
 	import { getBackendConfig } from '$lib/apis';
@@ -60,10 +61,13 @@
 				console.log(err);
 			}
 
-			wakeLock.addEventListener('release', () => {
-				// the wake lock has been released
-				console.log('Wake Lock released');
-			});
+			if (wakeLock) {
+				// Add a listener to release the wake lock when the page is unloaded
+				wakeLock.addEventListener('release', () => {
+					// the wake lock has been released
+					console.log('Wake Lock released');
+				});
+			}
 		};
 
 		if ('wakeLock' in navigator) {
@@ -138,7 +142,11 @@
 						await goto('/auth');
 					}
 				} else {
-					await goto('/auth');
+					// Don't redirect if we're already on the auth page
+					// Needed because we pass in tokens from OAuth logins via URL fragments
+					if ($page.url.pathname !== '/auth') {
+						await goto('/auth');
+					}
 				}
 			}
 		} else {
