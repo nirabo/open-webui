@@ -10,12 +10,16 @@
 	import { goto } from '$app/navigation';
 	import PromptMenu from './Prompts/PromptMenu.svelte';
 	import EllipsisHorizontal from '../icons/EllipsisHorizontal.svelte';
+	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
 	const i18n = getContext('i18n');
 
 	let importFiles = '';
 	let query = '';
 	let promptsImportInputElement: HTMLInputElement;
+
+	let showDeleteConfirm = false;
+	let deletePrompt = null;
 
 	const shareHandler = async (prompt) => {
 		toast.success($i18n.t('Redirecting you to OpenWebUI Community'));
@@ -155,7 +159,8 @@
 						exportHandler(prompt);
 					}}
 					deleteHandler={async () => {
-						deleteHandler(prompt);
+						deletePrompt = prompt;
+						showDeleteConfirm = true;
 					}}
 					onClose={() => {}}
 				>
@@ -276,7 +281,7 @@
 
 	<a
 		class=" flex space-x-4 cursor-pointer w-full mb-2 px-3 py-2"
-		href="https://openwebui.com/"
+		href="https://openwebui.com/#open-webui-community"
 		target="_blank"
 	>
 		<div class=" self-center w-10 flex-shrink-0">
@@ -301,3 +306,15 @@
 		</div>
 	</a>
 </div>
+
+<DeleteConfirmDialog
+	bind:show={showDeleteConfirm}
+	title={$i18n.t('Delete prompt?')}
+	on:confirm={() => {
+		deleteHandler(deletePrompt);
+	}}
+>
+	<div class=" text-sm text-gray-500">
+		{$i18n.t('This will delete')} <span class="  font-semibold">{deletePrompt.command}</span>.
+	</div>
+</DeleteConfirmDialog>

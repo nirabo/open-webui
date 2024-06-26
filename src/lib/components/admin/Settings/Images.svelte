@@ -19,6 +19,7 @@
 		updateOpenAIConfig
 	} from '$lib/apis/images';
 	import { getBackendConfig } from '$lib/apis';
+	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	const dispatch = createEventDispatcher();
 
 	const i18n = getContext('i18n');
@@ -92,7 +93,9 @@
 					toast.success($i18n.t('Server connection verified'));
 				}
 			} else {
-				({ AUTOMATIC1111_BASE_URL,AUTOMATIC1111_API_AUTH } = await getImageGenerationEngineUrls(localStorage.token));
+				({ AUTOMATIC1111_BASE_URL, AUTOMATIC1111_API_AUTH } = await getImageGenerationEngineUrls(
+					localStorage.token
+				));
 			}
 		}
 	};
@@ -276,15 +279,10 @@
 			</div>
 
 			<div class=" mb-2.5 text-sm font-medium">{$i18n.t('AUTOMATIC1111 Api Auth String')}</div>
-			<div class="flex w-full">
-				<div class="flex-1 mr-2">
-					<input
-						class="w-full rounded-lg py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-850 outline-none"
-						placeholder={$i18n.t('Enter api auth string (e.g. username:password)')}
-						bind:value={AUTOMATIC1111_API_AUTH}
-					/>
-				</div>
-			</div>
+			<SensitiveInput
+				placeholder={$i18n.t('Enter api auth string (e.g. username:password)')}
+				bind:value={AUTOMATIC1111_API_AUTH}
+			/>
 
 			<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
 				{$i18n.t('Include `--api-auth` flag when running stable-diffusion-webui')}
@@ -293,7 +291,7 @@
 					href="https://github.com/AUTOMATIC1111/stable-diffusion-webui/discussions/13993"
 					target="_blank"
 				>
-                    {$i18n.t('(e.g. `sh webui.sh --api --api-auth username_password`)').replace('_',':')}
+					{$i18n.t('(e.g. `sh webui.sh --api --api-auth username_password`)').replace('_', ':')}
 				</a>
 			</div>
 		{:else if imageGenerationEngine === 'comfyui'}
@@ -333,18 +331,13 @@
 
 				<div class="flex gap-2 mb-1">
 					<input
-						class="w-full rounded-lg py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-850 outline-none"
+						class="flex-1 w-full rounded-lg py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-850 outline-none"
 						placeholder={$i18n.t('API Base URL')}
 						bind:value={OPENAI_API_BASE_URL}
 						required
 					/>
 
-					<input
-						class="w-full rounded-lg py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-850 outline-none"
-						placeholder={$i18n.t('API Key')}
-						bind:value={OPENAI_API_KEY}
-						required
-					/>
+					<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={OPENAI_API_KEY} />
 				</div>
 			</div>
 		{/if}
