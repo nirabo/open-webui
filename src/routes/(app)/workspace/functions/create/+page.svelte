@@ -36,6 +36,22 @@
 	};
 
 	onMount(() => {
+		window.addEventListener('message', async (event) => {
+			if (
+				!['https://openwebui.com', 'https://www.openwebui.com', 'http://localhost:9999'].includes(
+					event.origin
+				)
+			)
+				return;
+
+			func = JSON.parse(event.data);
+			console.log(func);
+		});
+
+		if (window.opener ?? false) {
+			window.opener.postMessage('loaded', '*');
+		}
+
 		if (sessionStorage.function) {
 			func = JSON.parse(sessionStorage.function);
 			sessionStorage.removeItem('function');
@@ -49,14 +65,16 @@
 </script>
 
 {#if mounted}
-	<FunctionEditor
-		id={func?.id ?? ''}
-		name={func?.name ?? ''}
-		meta={func?.meta ?? { description: '' }}
-		content={func?.content ?? ''}
-		{clone}
-		on:save={(e) => {
-			saveHandler(e.detail);
-		}}
-	/>
+	{#key func?.content}
+		<FunctionEditor
+			id={func?.id ?? ''}
+			name={func?.name ?? ''}
+			meta={func?.meta ?? { description: '' }}
+			content={func?.content ?? ''}
+			{clone}
+			on:save={(e) => {
+				saveHandler(e.detail);
+			}}
+		/>
+	{/key}
 {/if}
