@@ -1,5 +1,6 @@
 import base64
 import uuid
+import subprocess
 from contextlib import asynccontextmanager
 
 from authlib.integrations.starlette_client import OAuth
@@ -27,6 +28,7 @@ from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 from fastapi.middleware.wsgi import WSGIMiddleware
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -54,6 +56,7 @@ from apps.webui.main import (
     get_pipe_models,
     generate_function_chat_completion,
 )
+from apps.webui.internal.db import Session, SessionLocal
 
 
 from pydantic import BaseModel
@@ -125,8 +128,10 @@ from config import (
     WEBUI_SESSION_COOKIE_SAME_SITE,
     WEBUI_SESSION_COOKIE_SECURE,
     AppConfig,
+    BACKEND_DIR,
+    DATABASE_URL,
 )
-from constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
+from constants import ERROR_MESSAGES, WEBHOOK_MESSAGES, TASKS
 from utils.webhook import post_webhook
 
 if SAFE_MODE:
@@ -167,8 +172,19 @@ https://github.com/open-webui/open-webui
 )
 
 
+def run_migrations():
+    env = os.environ.copy()
+    env["DATABASE_URL"] = DATABASE_URL
+    migration_task = subprocess.run(
+        ["alembic", f"-c{BACKEND_DIR}/alembic.ini", "upgrade", "head"], env=env
+    )
+    if migration_task.returncode > 0:
+        raise ValueError("Error running migrations")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    run_migrations()
     yield
 
 
@@ -311,6 +327,7 @@ async def get_function_call_response(
             {"role": "user", "content": f"Query: {prompt}"},
         ],
         "stream": False,
+        "task": TASKS.FUNCTION_CALLING,
     }
 
     try:
@@ -323,7 +340,6 @@ async def get_function_call_response(
     response = None
     try:
         response = await generate_chat_completions(form_data=payload, user=user)
-
         content = None
 
         if hasattr(response, "body_iterator"):
@@ -833,9 +849,6 @@ def filter_pipeline(payload, user):
                 pass
 
     if "pipeline" not in app.state.MODELS[model_id]:
-        if "title" in payload:
-            del payload["title"]
-
         if "task" in payload:
             del payload["task"]
 
@@ -900,6 +913,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def commit_session_after_request(request: Request, call_next):
+    response = await call_next(request)
+    log.debug("Commit session after request")
+    Session.commit()
+    return response
 
 
 @app.middleware("http")
@@ -978,12 +999,16 @@ async def get_all_models():
                     model["info"] = custom_model.model_dump()
         else:
             owned_by = "openai"
+            pipe = None
+
             for model in models:
                 if (
                     custom_model.base_model_id == model["id"]
                     or custom_model.base_model_id == model["id"].split(":")[0]
                 ):
                     owned_by = model["owned_by"]
+                    if "pipe" in model:
+                        pipe = model["pipe"]
                     break
 
             models.append(
@@ -995,11 +1020,11 @@ async def get_all_models():
                     "owned_by": owned_by,
                     "info": custom_model.model_dump(),
                     "preset": True,
+                    **({"pipe": pipe} if pipe is not None else {}),
                 }
             )
 
     app.state.MODELS = {model["id"]: model for model in models}
-
     webui_app.state.MODELS = app.state.MODELS
 
     return models
@@ -1338,7 +1363,7 @@ async def generate_title(form_data: dict, user=Depends(get_verified_user)):
         "stream": False,
         "max_tokens": 50,
         "chat_id": form_data.get("chat_id", None),
-        "title": True,
+        "task": TASKS.TITLE_GENERATION,
     }
 
     log.debug(payload)
@@ -1401,7 +1426,7 @@ async def generate_search_query(form_data: dict, user=Depends(get_verified_user)
         "messages": [{"role": "user", "content": content}],
         "stream": False,
         "max_tokens": 30,
-        "task": True,
+        "task": TASKS.QUERY_GENERATION,
     }
 
     print(payload)
@@ -1468,7 +1493,7 @@ Message: """{{prompt}}"""
         "stream": False,
         "max_tokens": 4,
         "chat_id": form_data.get("chat_id", None),
-        "task": True,
+        "task": TASKS.EMOJI_GENERATION,
     }
 
     log.debug(payload)
@@ -1743,7 +1768,9 @@ async def get_pipelines(urlIdx: Optional[int] = None, user=Depends(get_admin_use
 
 @app.get("/api/pipelines/{pipeline_id}/valves")
 async def get_pipeline_valves(
-    urlIdx: Optional[int], pipeline_id: str, user=Depends(get_admin_user)
+    urlIdx: Optional[int],
+    pipeline_id: str,
+    user=Depends(get_admin_user),
 ):
     models = await get_all_models()
     r = None
@@ -1781,7 +1808,9 @@ async def get_pipeline_valves(
 
 @app.get("/api/pipelines/{pipeline_id}/valves/spec")
 async def get_pipeline_valves_spec(
-    urlIdx: Optional[int], pipeline_id: str, user=Depends(get_admin_user)
+    urlIdx: Optional[int],
+    pipeline_id: str,
+    user=Depends(get_admin_user),
 ):
     models = await get_all_models()
 
@@ -2067,7 +2096,8 @@ async def oauth_callback(provider: str, request: Request, response: Response):
             if existing_user:
                 raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
 
-            picture_url = user_data.get("picture", "")
+            picture_claim = webui_app.state.config.OAUTH_PICTURE_CLAIM
+            picture_url = user_data.get(picture_claim, "")
             if picture_url:
                 # Download the profile image into a base64 string
                 try:
@@ -2087,6 +2117,7 @@ async def oauth_callback(provider: str, request: Request, response: Response):
                     picture_url = ""
             if not picture_url:
                 picture_url = "/user.png"
+            username_claim = webui_app.state.config.OAUTH_USERNAME_CLAIM
             role = (
                 "admin"
                 if Users.get_num_users() == 0
@@ -2097,7 +2128,7 @@ async def oauth_callback(provider: str, request: Request, response: Response):
                 password=get_password_hash(
                     str(uuid.uuid4())
                 ),  # Random password, not used
-                name=user_data.get("name", "User"),
+                name=user_data.get(username_claim, "User"),
                 profile_image_url=picture_url,
                 role=role,
                 oauth_sub=provider_sub,
@@ -2165,6 +2196,12 @@ async def get_opensearch_xml():
 
 @app.get("/health")
 async def healthcheck():
+    return {"status": True}
+
+
+@app.get("/health/db")
+async def healthcheck_with_db():
+    Session.execute(text("SELECT 1;")).all()
     return {"status": True}
 
 
