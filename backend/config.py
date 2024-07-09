@@ -484,6 +484,19 @@ if CUSTOM_NAME:
                         r.raw.decode_content = True
                         shutil.copyfileobj(r.raw, f)
 
+            if "splash" in data:
+                url = (
+                    f"https://api.openwebui.com{data['splash']}"
+                    if data["splash"][0] == "/"
+                    else data["splash"]
+                )
+
+                r = requests.get(url, stream=True)
+                if r.status_code == 200:
+                    with open(f"{STATIC_DIR}/splash.png", "wb") as f:
+                        r.raw.decode_content = True
+                        shutil.copyfileobj(r.raw, f)                
+
             WEBUI_NAME = data["name"]
     except Exception as e:
         log.exception(e)
@@ -1331,3 +1344,7 @@ AUDIO_TTS_VOICE = PersistentConfig(
 ####################################
 
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATA_DIR}/webui.db")
+
+# Replace the postgres:// with postgresql://
+if "postgres://" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")

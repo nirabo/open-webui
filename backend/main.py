@@ -173,13 +173,14 @@ https://github.com/open-webui/open-webui
 
 
 def run_migrations():
-    env = os.environ.copy()
-    env["DATABASE_URL"] = DATABASE_URL
-    migration_task = subprocess.run(
-        ["alembic", f"-c{BACKEND_DIR}/alembic.ini", "upgrade", "head"], env=env
-    )
-    if migration_task.returncode > 0:
-        raise ValueError("Error running migrations")
+    try:
+        from alembic.config import Config
+        from alembic import command
+
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+    except Exception as e:
+        print(f"Error: {e}")
 
 
 @asynccontextmanager
@@ -301,6 +302,7 @@ async def get_function_call_response(
     user,
     model,
     __event_emitter__=None,
+    __event_call__=None,
 ):
     tool = Tools.get_tool_by_id(tool_id)
     tools_specs = json.dumps(tool.specs, indent=2)
@@ -444,6 +446,13 @@ async def get_function_call_response(
                             "__event_emitter__": __event_emitter__,
                         }
 
+                    if "__event_call__" in sig.parameters:
+                        # Call the function with the '__event_call__' parameter included
+                        params = {
+                            **params,
+                            "__event_call__": __event_call__,
+                        }
+
                     if inspect.iscoroutinefunction(function):
                         function_result = await function(**params)
                     else:
@@ -467,7 +476,9 @@ async def get_function_call_response(
     return None, None, False
 
 
-async def chat_completion_functions_handler(body, model, user, __event_emitter__):
+async def chat_completion_functions_handler(
+    body, model, user, __event_emitter__, __event_call__
+):
     skip_files = None
 
     filter_ids = get_filter_function_ids(model)
@@ -533,10 +544,17 @@ async def chat_completion_functions_handler(body, model, user, __event_emitter__
                             **params,
                             "__model__": model,
                         }
+
                     if "__event_emitter__" in sig.parameters:
                         params = {
                             **params,
                             "__event_emitter__": __event_emitter__,
+                        }
+
+                    if "__event_call__" in sig.parameters:
+                        params = {
+                            **params,
+                            "__event_call__": __event_call__,
                         }
 
                     if inspect.iscoroutinefunction(inlet):
@@ -555,7 +573,9 @@ async def chat_completion_functions_handler(body, model, user, __event_emitter__
     return body, {}
 
 
-async def chat_completion_tools_handler(body, model, user, __event_emitter__):
+async def chat_completion_tools_handler(
+    body, model, user, __event_emitter__, __event_call__
+):
     skip_files = None
 
     contexts = []
@@ -578,6 +598,7 @@ async def chat_completion_tools_handler(body, model, user, __event_emitter__):
                     user=user,
                     model=model,
                     __event_emitter__=__event_emitter__,
+                    __event_call__=__event_call__,
                 )
 
                 print(file_handler)
@@ -675,6 +696,14 @@ class ChatCompletionMiddleware(BaseHTTPMiddleware):
                     to=session_id,
                 )
 
+            async def __event_call__(data):
+                response = await sio.call(
+                    "chat-events",
+                    {"chat_id": chat_id, "message_id": message_id, "data": data},
+                    to=session_id,
+                )
+                return response
+
             # Initialize data_items to store additional data to be sent to the client
             data_items = []
 
@@ -684,7 +713,7 @@ class ChatCompletionMiddleware(BaseHTTPMiddleware):
 
             try:
                 body, flags = await chat_completion_functions_handler(
-                    body, model, user, __event_emitter__
+                    body, model, user, __event_emitter__, __event_call__
                 )
             except Exception as e:
                 return JSONResponse(
@@ -694,7 +723,7 @@ class ChatCompletionMiddleware(BaseHTTPMiddleware):
 
             try:
                 body, flags = await chat_completion_tools_handler(
-                    body, model, user, __event_emitter__
+                    body, model, user, __event_emitter__, __event_call__
                 )
 
                 contexts.extend(flags.get("contexts", []))
@@ -1159,6 +1188,14 @@ async def chat_completed(form_data: dict, user=Depends(get_verified_user)):
             to=data["session_id"],
         )
 
+    async def __event_call__(data):
+        response = await sio.call(
+            "chat-events",
+            {"chat_id": data["chat_id"], "message_id": data["id"], "data": data},
+            to=data["session_id"],
+        )
+        return response
+
     def get_priority(function_id):
         function = Functions.get_function_by_id(function_id)
         if function is not None and hasattr(function, "valves"):
@@ -1244,6 +1281,12 @@ async def chat_completed(form_data: dict, user=Depends(get_verified_user)):
                         params = {
                             **params,
                             "__event_emitter__": __event_emitter__,
+                        }
+
+                    if "__event_call__" in sig.parameters:
+                        params = {
+                            **params,
+                            "__event_call__": __event_call__,
                         }
 
                     if inspect.iscoroutinefunction(outlet):
