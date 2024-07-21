@@ -175,7 +175,10 @@
 					delimiters: [
 						{ left: '$$', right: '$$', display: false },
 						{ left: '$ ', right: ' $', display: false },
+						{ left: '\\pu{', right: '}', display: false },
+						{ left: '\\ce{', right: '}', display: false },
 						{ left: '\\(', right: '\\)', display: false },
+						{ left: '( ', right: ' )', display: false },
 						{ left: '\\[', right: '\\]', display: false },
 						{ left: '[ ', right: ' ]', display: false }
 					],
@@ -218,7 +221,7 @@
 			if ((message?.content ?? '').trim() !== '') {
 				speaking = true;
 
-				if ($config.audio.tts.engine === 'openai') {
+				if ($config.audio.tts.engine !== '') {
 					loadingSpeech = true;
 
 					const sentences = extractSentences(message.content).reduce((mergedTexts, currentText) => {
@@ -566,6 +569,11 @@
 											const metadata = citation.metadata?.[index];
 											const id = metadata?.source ?? 'N/A';
 											let source = citation?.source;
+
+											if (metadata?.name) {
+												source = { ...source, name: metadata.name };
+											}
+
 											// Check if ID looks like a URL
 											if (id.startsWith('http://') || id.startsWith('https://')) {
 												source = { name: id };
