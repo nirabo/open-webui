@@ -803,8 +803,8 @@
 				...(params ?? $settings.params ?? {}),
 				stop:
 					params?.stop ?? $settings?.params?.stop ?? undefined
-						? (params?.stop ?? $settings.params.stop).map((str) =>
-								decodeURIComponent(JSON.parse('"' + str.replace(/\"/g, '\\"') + '"'))
+						? (params?.stop.split(',').map((token) => token.trim()) ?? $settings.params.stop).map(
+								(str) => decodeURIComponent(JSON.parse('"' + str.replace(/\"/g, '\\"') + '"'))
 						  )
 						: undefined,
 				num_predict: params?.max_tokens ?? $settings?.params?.max_tokens ?? undefined,
@@ -1103,8 +1103,8 @@
 					seed: params?.seed ?? $settings?.params?.seed ?? undefined,
 					stop:
 						params?.stop ?? $settings?.params?.stop ?? undefined
-							? (params?.stop ?? $settings.params.stop).map((str) =>
-									decodeURIComponent(JSON.parse('"' + str.replace(/\"/g, '\\"') + '"'))
+							? (params?.stop.split(',').map((token) => token.trim()) ?? $settings.params.stop).map(
+									(str) => decodeURIComponent(JSON.parse('"' + str.replace(/\"/g, '\\"') + '"'))
 							  )
 							: undefined,
 					temperature: params?.temperature ?? $settings?.params?.temperature ?? undefined,
@@ -1128,7 +1128,6 @@
 
 			if (res && res.ok && res.body) {
 				const textStream = await createOpenAITextStream(res.body, $settings.splitLargeChunks);
-				let lastUsage = null;
 
 				for await (const update of textStream) {
 					const { value, done, citations, error, usage } = update;
@@ -1154,7 +1153,7 @@
 					}
 
 					if (usage) {
-						lastUsage = usage;
+						responseMessage.info = { ...usage, openai: true };
 					}
 
 					if (citations) {
@@ -1206,10 +1205,6 @@
 					await tick();
 
 					document.getElementById(`speak-button-${responseMessage.id}`)?.click();
-				}
-
-				if (lastUsage) {
-					responseMessage.info = { ...lastUsage, openai: true };
 				}
 
 				if ($chatId == _chatId) {
