@@ -116,6 +116,7 @@ from config import (
     WEBUI_SECRET_KEY,
     WEBUI_SESSION_COOKIE_SAME_SITE,
     WEBUI_SESSION_COOKIE_SECURE,
+    ENABLE_ADMIN_CHAT_ACCESS,
     AppConfig,
 )
 
@@ -1656,7 +1657,7 @@ async def get_tools_function_calling(form_data: dict, user=Depends(get_verified_
 
 @app.get("/api/pipelines/list")
 async def get_pipelines_list(user=Depends(get_admin_user)):
-    responses = await get_openai_models(raw = True)
+    responses = await get_openai_models(raw=True)
 
     print(responses)
     urlIdxs = [
@@ -1996,6 +1997,7 @@ async def get_app_config():
             "enable_image_generation": images_app.state.config.ENABLED,
             "enable_community_sharing": webui_app.state.config.ENABLE_COMMUNITY_SHARING,
             "enable_admin_export": ENABLE_ADMIN_EXPORT,
+            "enable_admin_chat_access": ENABLE_ADMIN_CHAT_ACCESS,
         },
         "audio": {
             "tts": {
