@@ -25,6 +25,7 @@ services:
     environment:
       - 'OLLAMA_BASE_URL=http://ollama:11434'
       - 'WEBUI_SECRET_KEY='
+      - 'ENABLE_RAG_LOCAL_WEB_FETCH=${ENABLE_RAG_LOCAL_WEB_FETCH:-True}'
     extra_hosts:
       - host.docker.internal=host-gateway
     networks:
