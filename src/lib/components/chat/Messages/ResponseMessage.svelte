@@ -2,9 +2,6 @@
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
 	import { marked } from 'marked';
-	import tippy from 'tippy.js';
-	import auto_render from 'katex/dist/contrib/auto-render.mjs';
-	import mermaid from 'mermaid';
 
 	import { fade } from 'svelte/transition';
 	import { createEventDispatcher } from 'svelte';
@@ -21,8 +18,7 @@
 		approximateToHumanReadable,
 		extractSentences,
 		replaceTokens,
-		revertSanitizedResponseContent,
-		sanitizeResponseContent
+		processResponseContent
 	} from '$lib/utils';
 	import { WEBUI_BASE_URL } from '$lib/constants';
 
@@ -81,6 +77,7 @@
 	import 'katex/dist/katex.min.css';
 
 	import markedKatex from '$lib/utils/katex-extension';
+
 	const options = {
 		throwOnError: false
 	};
@@ -90,41 +87,10 @@
 	$: (async () => {
 		if (message?.content) {
 			tokens = marked.lexer(
-				replaceTokens(sanitizeResponseContent(message?.content), model?.name, $user?.name)
+				replaceTokens(processResponseContent(message?.content), model?.name, $user?.name)
 			);
 		}
 	})();
-
-	$: if (message?.done ?? false) {
-		renderLatex();
-	}
-
-	const renderLatex = () => {
-		let chatMessageElements = document
-			.getElementById(`message-${message.id}`)
-			?.getElementsByClassName('chat-assistant');
-
-		if (chatMessageElements) {
-			for (const element of chatMessageElements) {
-				auto_render(element, {
-					// customised options
-					// • auto-render specific keys, e.g.:
-					delimiters: [
-						{ left: '$$', right: '$$', display: false },
-						{ left: '$ ', right: ' $', display: false },
-						{ left: '\\pu{', right: '}', display: false },
-						{ left: '\\ce{', right: '}', display: false },
-						{ left: '\\(', right: '\\)', display: false },
-						{ left: '( ', right: ' )', display: false },
-						{ left: '\\[', right: '\\]', display: false },
-						{ left: '[ ', right: ' ]', display: false }
-					],
-					// • rendering keys, e.g.:
-					throwOnError: false
-				});
-			}
-		}
-	};
 
 	const playAudio = (idx) => {
 		return new Promise((res) => {
@@ -279,14 +245,12 @@
 		editedContent = '';
 
 		await tick();
-		renderLatex();
 	};
 
 	const cancelEditMessage = async () => {
 		edit = false;
 		editedContent = '';
 		await tick();
-		renderLatex();
 	};
 
 	const generateImage = async (message) => {
@@ -311,21 +275,11 @@
 	$: if (!edit) {
 		(async () => {
 			await tick();
-			renderLatex();
-
-			await mermaid.run({
-				querySelector: '.mermaid'
-			});
 		})();
 	}
 
 	onMount(async () => {
 		await tick();
-		renderLatex();
-
-		await mermaid.run({
-			querySelector: '.mermaid'
-		});
 	});
 </script>
 
