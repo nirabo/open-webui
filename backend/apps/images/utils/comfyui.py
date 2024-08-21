@@ -15,116 +15,6 @@ from pydantic import BaseModel
 
 from typing import Optional
 
-COMFYUI_DEFAULT_WORKFLOW = """
-{
-  "3": {
-    "inputs": {
-      "seed": 0,
-      "steps": 20,
-      "cfg": 8,
-      "sampler_name": "euler",
-      "scheduler": "normal",
-      "denoise": 1,
-      "model": [
-        "4",
-        0
-      ],
-      "positive": [
-        "6",
-        0
-      ],
-      "negative": [
-        "7",
-        0
-      ],
-      "latent_image": [
-        "5",
-        0
-      ]
-    },
-    "class_type": "KSampler",
-    "_meta": {
-      "title": "KSampler"
-    }
-  },
-  "4": {
-    "inputs": {
-      "ckpt_name": "model.safetensors"
-    },
-    "class_type": "CheckpointLoaderSimple",
-    "_meta": {
-      "title": "Load Checkpoint"
-    }
-  },
-  "5": {
-    "inputs": {
-      "width": 512,
-      "height": 512,
-      "batch_size": 1
-    },
-    "class_type": "EmptyLatentImage",
-    "_meta": {
-      "title": "Empty Latent Image"
-    }
-  },
-  "6": {
-    "inputs": {
-      "text": "Prompt",
-      "clip": [
-        "4",
-        1
-      ]
-    },
-    "class_type": "CLIPTextEncode",
-    "_meta": {
-      "title": "CLIP Text Encode (Prompt)"
-    }
-  },
-  "7": {
-    "inputs": {
-      "text": "",
-      "clip": [
-        "4",
-        1
-      ]
-    },
-    "class_type": "CLIPTextEncode",
-    "_meta": {
-      "title": "CLIP Text Encode (Prompt)"
-    }
-  },
-  "8": {
-    "inputs": {
-      "samples": [
-        "3",
-        0
-      ],
-      "vae": [
-        "4",
-        2
-      ]
-    },
-    "class_type": "VAEDecode",
-    "_meta": {
-      "title": "VAE Decode"
-    }
-  },
-  "9": {
-    "inputs": {
-      "filename_prefix": "ComfyUI",
-      "images": [
-        "8",
-        0
-      ]
-    },
-    "class_type": "SaveImage",
-    "_meta": {
-      "title": "Save Image"
-    }
-  }
-}
-"""
-
 
 def queue_prompt(prompt, client_id, base_url):
     log.info("queue_prompt")
@@ -184,7 +74,7 @@ def get_images(ws, prompt, client_id, base_url):
 
 class ComfyUINodeInput(BaseModel):
     field: Optional[str] = None
-    node_id: str
+    node_ids: list[str] = []
     key: Optional[str] = "text"
     value: Optional[str] = None
 
@@ -216,27 +106,37 @@ async def comfyui_generate_image(
     for node in payload.workflow.nodes:
         if node.field:
             if node.field == "model":
-                workflow[node.node_id]["inputs"][node.key] = model
+                for node_id in node.node_ids:
+                    workflow[node_id]["inputs"][node.key] = model
             elif node.field == "prompt":
-                workflow[node.node_id]["inputs"]["text"] = payload.prompt
+                for node_id in node.node_ids:
+                    workflow[node_id]["inputs"]["text"] = payload.prompt
             elif node.field == "negative_prompt":
-                workflow[node.node_id]["inputs"]["text"] = payload.negative_prompt
+                for node_id in node.node_ids:
+                    workflow[node_id]["inputs"]["text"] = payload.negative_prompt
             elif node.field == "width":
-                workflow[node.node_id]["inputs"]["width"] = payload.width
+                for node_id in node.node_ids:
+                    workflow[node_id]["inputs"]["width"] = payload.width
             elif node.field == "height":
-                workflow[node.node_id]["inputs"]["height"] = payload.height
+                for node_id in node.node_ids:
+                    workflow[node_id]["inputs"]["height"] = payload.height
             elif node.field == "n":
-                workflow[node.node_id]["inputs"]["batch_size"] = payload.n
+                for node_id in node.node_ids:
+                    workflow[node_id]["inputs"]["batch_size"] = payload.n
             elif node.field == "steps":
-                workflow[node.node_id]["inputs"]["steps"] = payload.steps
+                for node_id in node.node_ids:
+                    workflow[node_id]["inputs"]["steps"] = payload.steps
             elif node.field == "seed":
-                workflow[node.node_id]["inputs"]["seed"] = (
+                seed = (
                     payload.seed
                     if payload.seed
                     else random.randint(0, 18446744073709551614)
                 )
+                for node_id in node.node_ids:
+                    workflow[node.node_id]["inputs"]["seed"] = seed
         else:
-            workflow[node.node_id]["inputs"][node.key] = node.value
+            for node_id in node.node_ids:
+                workflow[node_id]["inputs"][node.key] = node.value
 
     try:
         ws = websocket.WebSocket()
