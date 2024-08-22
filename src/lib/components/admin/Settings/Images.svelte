@@ -10,10 +10,12 @@
 		getImageGenerationConfig,
 		updateImageGenerationConfig,
 		getConfig,
-		updateConfig
+		updateConfig,
+		verifyConfigUrl
 	} from '$lib/apis/images';
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	const dispatch = createEventDispatcher();
 
 	const i18n = getContext('i18n');
@@ -25,7 +27,38 @@
 
 	let models = null;
 
-	let inputFiles = null;
+	let requiredWorkflowNodes = [
+		{
+			type: 'prompt',
+			key: 'text',
+			node_ids: ''
+		},
+		{
+			type: 'model',
+			key: 'ckpt_name',
+			node_ids: ''
+		},
+		{
+			type: 'width',
+			key: 'width',
+			node_ids: ''
+		},
+		{
+			type: 'height',
+			key: 'height',
+			node_ids: ''
+		},
+		{
+			type: 'steps',
+			key: 'steps',
+			node_ids: ''
+		},
+		{
+			type: 'seed',
+			key: 'seed',
+			node_ids: ''
+		}
+	];
 
 	const getModels = async () => {
 		models = await getImageGenerationModels(localStorage.token).catch((error) => {
@@ -50,8 +83,38 @@
 		}
 	};
 
+	const validateJSON = (json) => {
+		try {
+			const obj = JSON.parse(json);
+
+			if (obj && typeof obj === 'object') {
+				return true;
+			}
+		} catch (e) {}
+		return false;
+	};
+
 	const saveHandler = async () => {
 		loading = true;
+
+		if (config?.comfyui?.COMFYUI_WORKFLOW) {
+			if (!validateJSON(config.comfyui.COMFYUI_WORKFLOW)) {
+				toast.error('Invalid JSON format for ComfyUI Workflow.');
+				loading = false;
+				return;
+			}
+		}
+
+		if (config?.comfyui?.COMFYUI_WORKFLOW) {
+			config.comfyui.COMFYUI_WORKFLOW_NODES = requiredWorkflowNodes.map((node) => {
+				return {
+					type: node.type,
+					key: node.key,
+					node_ids:
+						node.node_ids.trim() === '' ? [] : node.node_ids.split(',').map((id) => id.trim())
+				};
+			});
+		}
 
 		await updateConfig(localStorage.token, config).catch((error) => {
 			toast.error(error);
@@ -65,6 +128,7 @@
 			return null;
 		});
 
+		getModels();
 		dispatch('save');
 		loading = false;
 	};
@@ -83,6 +147,26 @@
 			if (config.enabled) {
 				getModels();
 			}
+
+			if (config.comfyui.COMFYUI_WORKFLOW) {
+				config.comfyui.COMFYUI_WORKFLOW = JSON.stringify(
+					JSON.parse(config.comfyui.COMFYUI_WORKFLOW),
+					null,
+					2
+				);
+			}
+
+			requiredWorkflowNodes = requiredWorkflowNodes.map((node) => {
+				const n = config.comfyui.COMFYUI_WORKFLOW_NODES.find((n) => n.type === node.type) ?? node;
+
+				console.log(n);
+
+				return {
+					type: n.type,
+					key: n.key,
+					node_ids: typeof n.node_ids === 'string' ? n.node_ids : n.node_ids.join(',')
+				};
+			});
 
 			const imageConfigRes = await getImageGenerationConfig(localStorage.token).catch((error) => {
 				toast.error(error);
@@ -180,8 +264,16 @@
 							<button
 								class="px-2.5 bg-gray-50 hover:bg-gray-100 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-100 rounded-lg transition"
 								type="button"
-								on:click={() => {
-									updateConfigHandler();
+								on:click={async () => {
+									await updateConfigHandler();
+									const res = await verifyConfigUrl(localStorage.token).catch((error) => {
+										toast.error(error);
+										return null;
+									});
+
+									if (res) {
+										toast.success($i18n.t('Server connection verified'));
+									}
 								}}
 							>
 								<svg
@@ -248,8 +340,16 @@
 							<button
 								class="px-2.5 bg-gray-50 hover:bg-gray-100 text-gray-800 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-100 rounded-lg transition"
 								type="button"
-								on:click={() => {
-									updateConfigHandler();
+								on:click={async () => {
+									await updateConfigHandler();
+									const res = await verifyConfigUrl(localStorage.token).catch((error) => {
+										toast.error(error);
+										return null;
+									});
+
+									if (res) {
+										toast.success($i18n.t('Server connection verified'));
+									}
 								}}
 							>
 								<svg
@@ -275,8 +375,8 @@
 							<textarea
 								class="w-full rounded-lg mb-1 py-2 px-4 text-xs bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-none disabled:text-gray-600 resize-none"
 								rows="10"
-								value={JSON.stringify(JSON.parse(config.comfyui.COMFYUI_WORKFLOW), null, 2)}
-								disabled
+								bind:value={config.comfyui.COMFYUI_WORKFLOW}
+								required
 							/>
 						{/if}
 
@@ -293,8 +393,6 @@
 
 										reader.onload = (e) => {
 											config.comfyui.COMFYUI_WORKFLOW = e.target.result;
-											updateConfigHandler();
-
 											e.target.value = null;
 										};
 
@@ -323,45 +421,45 @@
 						<div class="">
 							<div class=" mb-2 text-sm font-medium">{$i18n.t('ComfyUI Workflow Nodes')}</div>
 
-							<div class="text-xs">
-								<div class="flex gap-2">
-									<div>Prompt Node</div>
-									<div>Node Ids</div>
-									<div>"text"</div>
-									<div>Default</div>
-								</div>
+							<div class="text-xs flex flex-col gap-1.5">
+								{#each requiredWorkflowNodes as node}
+									<div class="flex w-full items-center border dark:border-gray-850 rounded-lg">
+										<div class="flex-shrink-0">
+											<div
+												class=" capitalize line-clamp-1 font-medium px-3 py-1 w-20 text-center rounded-l-lg bg-green-500/10 text-green-700 dark:text-green-200"
+											>
+												{node.type}{node.type === 'prompt' ? '*' : ''}
+											</div>
+										</div>
+										<div class="">
+											<Tooltip content="Input Key (e.g. text, unet_name, steps)">
+												<input
+													class="py-1 px-3 w-24 text-xs text-center bg-transparent outline-none border-r dark:border-gray-850"
+													placeholder="Key"
+													bind:value={node.key}
+													required
+												/>
+											</Tooltip>
+										</div>
 
-								<div class="flex gap-2">
-									<div>Model Node</div>
-									<div>Node Ids</div>
-									<div>"text"</div>
-									<div>Default</div>
-								</div>
-
-								<div class="flex gap-2">
-									<div>Image Size Node</div>
-									<div>Node Ids</div>
-									<div>"text"</div>
-									<div>Default</div>
-								</div>
-
-								<div class="flex gap-2">
-									<div>Image Steps Node</div>
-									<div>Node Ids</div>
-									<div>"text"</div>
-									<div>Default</div>
-								</div>
+										<div class="w-full">
+											<Tooltip
+												content="Comma separated Node Ids (e.g. 1 or 1,2)"
+												placement="top-start"
+											>
+												<input
+													class="w-full py-1 px-4 rounded-r-lg text-xs bg-transparent outline-none"
+													placeholder="Node Ids"
+													bind:value={node.node_ids}
+												/>
+											</Tooltip>
+										</div>
+									</div>
+								{/each}
 							</div>
 
-							<hr class=" dark:border-gray-850 my-2" />
-
-							<div class="text-xs">
-								<div class="flex gap-2">
-									<div>Custom Node</div>
-									<div>Node Ids</div>
-									<div>Key</div>
-									<div>Value</div>
-								</div>
+							<div class="mt-2 text-xs text-right text-gray-400 dark:text-gray-500">
+								{$i18n.t('*Prompt node ID(s) are required for image generation')}
 							</div>
 						</div>
 					{/if}
@@ -395,18 +493,21 @@
 						<div class="flex-1 mr-2">
 							<div class="flex w-full">
 								<div class="flex-1">
-									<input
-										list="model-list"
-										class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-none"
-										bind:value={imageGenerationConfig.MODEL}
-										placeholder="Select a model"
-									/>
+									<Tooltip content={$i18n.t('Enter Model ID')} placement="top-start">
+										<input
+											list="model-list"
+											class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-none"
+											bind:value={imageGenerationConfig.MODEL}
+											placeholder="Select a model"
+											required
+										/>
 
-									<datalist id="model-list">
-										{#each models ?? [] as model}
-											<option value={model.id}>{model.name}</option>
-										{/each}
-									</datalist>
+										<datalist id="model-list">
+											{#each models ?? [] as model}
+												<option value={model.id}>{model.name}</option>
+											{/each}
+										</datalist>
+									</Tooltip>
 								</div>
 							</div>
 						</div>
@@ -417,11 +518,14 @@
 					<div class=" mb-2.5 text-sm font-medium">{$i18n.t('Set Image Size')}</div>
 					<div class="flex w-full">
 						<div class="flex-1 mr-2">
-							<input
-								class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-none"
-								placeholder={$i18n.t('Enter Image Size (e.g. 512x512)')}
-								bind:value={imageGenerationConfig.IMAGE_SIZE}
-							/>
+							<Tooltip content={$i18n.t('Enter Image Size (e.g. 512x512)')} placement="top-start">
+								<input
+									class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-none"
+									placeholder={$i18n.t('Enter Image Size (e.g. 512x512)')}
+									bind:value={imageGenerationConfig.IMAGE_SIZE}
+									required
+								/>
+							</Tooltip>
 						</div>
 					</div>
 				</div>
@@ -430,11 +534,14 @@
 					<div class=" mb-2.5 text-sm font-medium">{$i18n.t('Set Steps')}</div>
 					<div class="flex w-full">
 						<div class="flex-1 mr-2">
-							<input
-								class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-none"
-								placeholder={$i18n.t('Enter Number of Steps (e.g. 50)')}
-								bind:value={imageGenerationConfig.IMAGE_STEPS}
-							/>
+							<Tooltip content={$i18n.t('Enter Number of Steps (e.g. 50)')} placement="top-start">
+								<input
+									class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-none"
+									placeholder={$i18n.t('Enter Number of Steps (e.g. 50)')}
+									bind:value={imageGenerationConfig.IMAGE_STEPS}
+									required
+								/>
+							</Tooltip>
 						</div>
 					</div>
 				</div>
