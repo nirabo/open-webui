@@ -542,6 +542,16 @@
 					`Oops! Hold tight! Your files are still in the processing oven. We're cooking them up to perfection. Please be patient and we'll let you know once they're ready.`
 				)
 			);
+		} else if (
+			($config?.file?.max_count ?? null) !== null &&
+			files.length + chatFiles.length > $config?.file?.max_count
+		) {
+			console.log(chatFiles.length, files.length);
+			toast.error(
+				$i18n.t(`You can only chat with a maximum of {{maxCount}} file(s) at a time.`, {
+					maxCount: $config?.file?.max_count
+				})
+			);
 		} else {
 			// Reset chat input textarea
 			const chatTextAreaElement = document.getElementById('chat-textarea');
@@ -1043,6 +1053,13 @@
 				};
 			}
 			responseMessage.done = true;
+
+			if (responseMessage.statusHistory) {
+				responseMessage.statusHistory = responseMessage.statusHistory.filter(
+					(status) => status.action !== 'knowledge_search'
+				);
+			}
+
 			messages = messages;
 		}
 
@@ -1405,6 +1422,12 @@
 		};
 		responseMessage.done = true;
 
+		if (responseMessage.statusHistory) {
+			responseMessage.statusHistory = responseMessage.statusHistory.filter(
+				(status) => status.action !== 'knowledge_search'
+			);
+		}
+
 		messages = messages;
 	};
 
@@ -1656,25 +1679,6 @@
 
 <audio id="audioElement" src="" style="display: none;" />
 
-<ChatControls
-	models={selectedModelIds.reduce((a, e, i, arr) => {
-		const model = $models.find((m) => m.id === e);
-		if (model) {
-			return [...a, model];
-		}
-		return a;
-	}, [])}
-	bind:show={showControls}
-	bind:chatFiles
-	bind:params
-	bind:files
-	{submitPrompt}
-	{stopResponse}
-	modelId={selectedModelIds?.at(0) ?? null}
-	chatId={$chatId}
-	{eventTarget}
-/>
-
 <EventConfirmDialog
 	bind:show={showEventConfirmation}
 	title={eventConfirmationTitle}
@@ -1812,3 +1816,22 @@
 		</div>
 	</div>
 {/if}
+
+<ChatControls
+	models={selectedModelIds.reduce((a, e, i, arr) => {
+		const model = $models.find((m) => m.id === e);
+		if (model) {
+			return [...a, model];
+		}
+		return a;
+	}, [])}
+	bind:show={showControls}
+	bind:chatFiles
+	bind:params
+	bind:files
+	{submitPrompt}
+	{stopResponse}
+	modelId={selectedModelIds?.at(0) ?? null}
+	chatId={$chatId}
+	{eventTarget}
+/>
