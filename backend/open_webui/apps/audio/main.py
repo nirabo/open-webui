@@ -21,14 +21,14 @@ from open_webui.config import (
     AUDIO_TTS_VOICE,
     CACHE_DIR,
     CORS_ALLOW_ORIGIN,
-    DEVICE_TYPE,
     WHISPER_MODEL,
     WHISPER_MODEL_AUTO_UPDATE,
     WHISPER_MODEL_DIR,
     AppConfig,
 )
+
 from open_webui.constants import ERROR_MESSAGES
-from open_webui.env import SRC_LOG_LEVELS
+from open_webui.env import SRC_LOG_LEVELS, DEVICE_TYPE
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -443,7 +443,7 @@ def get_available_models() -> list[dict]:
 
         try:
             response = requests.get(
-                "https://api.elevenlabs.io/v1/models", headers=headers
+                "https://api.elevenlabs.io/v1/models", headers=headers, timeout=5
             )
             response.raise_for_status()
             models = response.json()
