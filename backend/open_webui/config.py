@@ -1030,19 +1030,25 @@ CHUNK_OVERLAP = PersistentConfig(
     int(os.environ.get("CHUNK_OVERLAP", "100")),
 )
 
-DEFAULT_RAG_TEMPLATE = """Use the following context as your learned knowledge, inside <context></context> XML tags.
+DEFAULT_RAG_TEMPLATE = """You are given a user query, some textual context and rules, all inside xml tags. You have to answer the query based on the context while respecting the rules.
+
 <context>
-    [context]
+[context]
 </context>
 
-When answer to user:
-- If you don't know, just say that you don't know.
-- If you don't know when you are not sure, ask for clarification.
-Avoid mentioning that you obtained the information from the context.
-And answer according to the language of the user's question.
+<rules>
+- If you don't know, just say so.
+- If you are not sure, ask for clarification.
+- Answer in the same language as the user query.
+- If the context appears unreadable or of poor quality, tell the user then answer as best as you can.
+- If the answer is not in the context but you think you know the answer, explain that to the user then answer with your own knowledge.
+- Answer directly and without using xml tags.
+</rules>
 
-Given the context information, answer the query.
-Query: [query]"""
+<user_query>
+[query]
+</user_query>
+"""
 
 RAG_TEMPLATE = PersistentConfig(
     "RAG_TEMPLATE",
@@ -1210,6 +1216,37 @@ AUTOMATIC1111_API_AUTH = PersistentConfig(
     "AUTOMATIC1111_API_AUTH",
     "image_generation.automatic1111.api_auth",
     os.getenv("AUTOMATIC1111_API_AUTH", ""),
+)
+
+AUTOMATIC1111_CFG_SCALE = PersistentConfig(
+    "AUTOMATIC1111_CFG_SCALE",
+    "image_generation.automatic1111.cfg_scale",
+    (
+        float(os.environ.get("AUTOMATIC1111_CFG_SCALE"))
+        if os.environ.get("AUTOMATIC1111_CFG_SCALE")
+        else None
+    ),
+)
+
+
+AUTOMATIC1111_SAMPLER = PersistentConfig(
+    "AUTOMATIC1111_SAMPLERE",
+    "image_generation.automatic1111.sampler",
+    (
+        os.environ.get("AUTOMATIC1111_SAMPLER")
+        if os.environ.get("AUTOMATIC1111_SAMPLER")
+        else None
+    ),
+)
+
+AUTOMATIC1111_SCHEDULER = PersistentConfig(
+    "AUTOMATIC1111_SCHEDULER",
+    "image_generation.automatic1111.scheduler",
+    (
+        os.environ.get("AUTOMATIC1111_SCHEDULER")
+        if os.environ.get("AUTOMATIC1111_SCHEDULER")
+        else None
+    ),
 )
 
 COMFYUI_BASE_URL = PersistentConfig(
