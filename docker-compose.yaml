@@ -9,7 +9,8 @@ services:
     image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
     environment:
       - OLLAMA_NUM_PARALLEL=${OLLAMA_RUN_PARALLEL:-2}
-      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-2}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-4}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-}
 
   open-webui:
     build:
